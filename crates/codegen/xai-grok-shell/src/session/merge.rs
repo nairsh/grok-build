@@ -213,11 +213,26 @@ pub fn merge(
             (Some(l), None) => Some(l),
             (None, remote_ts) => remote_ts,
         };
+        // Auto-title persistence is local and immediate, while registry sync
+        // is asynchronous. Preserve a newer local display title during that
+        // small window; otherwise `/resume` can show the first prompt or an
+        // older remote title immediately after the UI has renamed the session.
+        // A genuinely newer remote edit still wins.
+        let local_title_is_newer = !local.summary.trim().is_empty()
+            && chrono::DateTime::parse_from_rfc3339(&local.updated_at)
+                .ok()
+                .zip(chrono::DateTime::parse_from_rfc3339(&r.updated_at).ok())
+                .is_some_and(|(local_time, remote_time)| local_time > remote_time);
+        let summary = if local_title_is_newer {
+            local.summary
+        } else {
+            r.summary
+        };
         by_id.insert(
             r.session_id.clone(),
             MergedSession {
                 session_id: r.session_id,
-                summary: r.summary,
+                summary,
                 first_prompt: r.first_prompt,
                 updated_at: r.updated_at,
                 created_at: r.created_at,
@@ -390,6 +405,22 @@ mod tests {
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].summary, "remote title");
         assert_eq!(merged[0].source, "both");
+    }
+
+    #[test]
+    fn newer_local_auto_title_is_visible_before_registry_sync() {
+        let local = vec![make_summary(
+            "s1",
+            "Auditing Code Base",
+            "2026-03-02T00:00:00Z",
+        )];
+        let remote = vec![make_remote(
+            "s1",
+            "audit the code base",
+            "2026-03-01T00:00:00Z",
+        )];
+        let merged = merge(remote, local, None, &[], 20);
+        assert_eq!(merged[0].summary, "Auditing Code Base");
     }
 
     #[test]

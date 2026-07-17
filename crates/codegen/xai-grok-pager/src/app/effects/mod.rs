@@ -42,6 +42,31 @@ pub(crate) fn execute(
     let mut meta = EffectMeta::default();
     let effect_is_send_now = matches!(effect, Effect::SendPromptNow { .. });
     match effect {
+        Effect::ProviderOauthLogin { agent_id, provider } => {
+            tasks.spawn(async move {
+                use xai_grok_shell::agent::login_interactive::login_subscription_and_store;
+                use xai_grok_shell::agent::oauth_providers::SubscriptionProvider;
+
+                let parsed = match provider.as_str() {
+                    "anthropic-subscription" => Ok(SubscriptionProvider::Anthropic),
+                    "openai-codex" => Ok(SubscriptionProvider::OpenAiCodex),
+                    _ => Err("unsupported subscription provider".to_owned()),
+                };
+                let result = match parsed {
+                    Ok(provider_kind) => {
+                        login_subscription_and_store(provider_kind)
+                            .await
+                            .map_err(|error| sanitize_user_error(&error.to_string()))
+                    }
+                    Err(error) => Err(error),
+                };
+                TaskResult::ProviderOauthLoginComplete {
+                    agent_id,
+                    provider,
+                    result,
+                }
+            });
+        }
         Effect::RegisterActiveSession { session_id, cwd } => {
             crate::app::signal_handler::set_current_session_id(Some(session_id.clone()));
             if let Err(e) = xai_grok_shell::active_sessions::register(xai_grok_shell::active_sessions::ActiveSession {
@@ -1603,21 +1628,30 @@ pub(crate) fn execute(
             session_id,
             model_id,
             effort,
+            service_tier_change,
             prev_model_id,
         } => {
             let tx = acp_tx.clone();
             tasks
                 .spawn(async move {
-                    let meta = effort
-                        .map(|eff| {
+                    let service_tier_meta = service_tier_change.clone();
+                    let meta = (effort.is_some() || service_tier_change.is_some()).then(|| {
                             use xai_grok_shell::sampling::types::{
                                 REASONING_EFFORT_META_KEY, reasoning_effort_meta_value,
                             };
                             let mut m = acp::Meta::new();
-                            m.insert(
-                                REASONING_EFFORT_META_KEY.to_string(),
-                                reasoning_effort_meta_value(eff),
-                            );
+                            if let Some(eff) = effort {
+                                m.insert(
+                                    REASONING_EFFORT_META_KEY.to_string(),
+                                    reasoning_effort_meta_value(eff),
+                                );
+                            }
+                            if let Some(service_tier) = service_tier_meta {
+                                m.insert(
+                                    "serviceTier".to_string(),
+                                    service_tier.map_or(serde_json::Value::Null, serde_json::Value::String),
+                                );
+                            }
                             m
                         });
                     let req = acp::SetSessionModelRequest::new(
@@ -1645,6 +1679,7 @@ pub(crate) fn execute(
                         agent_id,
                         model_id,
                         effort,
+                        service_tier_change,
                         result,
                         prev_model_id,
                     }

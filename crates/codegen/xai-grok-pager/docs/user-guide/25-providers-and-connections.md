@@ -1,8 +1,8 @@
 # Providers and Connections
 
-Atlas is multi-provider. Beyond the built-in xAI models you can point models at
-OpenAI, Anthropic, OpenRouter, and OpenAI/Anthropic-compatible endpoints. Claude
-Pro/Max and ChatGPT (Codex) subscription login are also supported.
+Atlas is multi-provider. Beyond the built-in xAI models, it includes 26
+API-key provider presets plus arbitrary OpenAI/Anthropic-compatible endpoints.
+Claude Pro/Max and ChatGPT (Codex) subscription login are also supported.
 
 The model layer separates four independent ideas so **a provider is not an
 account**:
@@ -29,10 +29,19 @@ Run:
 atlas login
 ```
 
-Choose a subscription or **Add an API key**. For API keys, Atlas asks for the
-provider and model id, stores the secret in `~/.grok/credentials.json`, and adds
-a complete connection plus model entry to `~/.grok/config.toml`. The connection
-is usable on the next `atlas` launch; no hand-editing is required.
+Choose a subscription, API-key provider, or custom endpoint. You can jump
+directly to a provider with `atlas login openrouter`. From a running session,
+`/login` opens a native provider-management window and keeps the session
+intact. It shows whether each provider has a saved key, subscription login, or
+environment key (without displaying the secret). Press `Enter` to run that
+provider's setup flow, `d` to remove a saved credential, and `r` to refresh
+the status. Built-in xAI account sessions continue to use `/logout`.
+
+For API keys, Atlas hides the key while you type, suggests the provider's
+current default model, stores the secret in `~/.grok/credentials.json`, and adds
+a complete connection plus model entry to `~/.grok/config.toml`. Restart Atlas
+after adding a provider from the running TUI so the agent reloads its model
+catalog.
 
 Atlas also ships built-in connections keyed off conventional environment
 variables. This remains useful for scripted or ephemeral setups:
@@ -53,13 +62,35 @@ context_window = 400000
 /model gpt-5.1
 ```
 
-Built-in connections:
+Built-in API-key connections:
 
-| Connection id | Adapter | Endpoint | Env var |
-|---------------|---------|----------|---------|
-| `openai` | `responses` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
-| `anthropic` | `messages` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
-| `openrouter` | `chat_completions` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| Connection ids | Env vars |
+|---|---|
+| `openai`, `anthropic`, `openrouter`, `litellm` | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `LITELLM_API_KEY` |
+| `google`, `deepseek`, `groq`, `cerebras`, `nvidia` | `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `NVIDIA_API_KEY` |
+| `zai`, `zai-coding-cn`, `mistral` | `ZAI_API_KEY`, `ZAI_CODING_CN_API_KEY`, `MISTRAL_API_KEY` |
+| `minimax`, `minimax-cn` | `MINIMAX_API_KEY`, `MINIMAX_CN_API_KEY` |
+| `moonshotai`, `moonshotai-cn`, `kimi-coding` | `MOONSHOT_API_KEY`, `MOONSHOT_API_KEY`, `KIMI_API_KEY` |
+| `huggingface`, `fireworks`, `together` | `HF_TOKEN`, `FIREWORKS_API_KEY`, `TOGETHER_API_KEY` |
+| `vercel-ai-gateway`, `ant-ling` | `AI_GATEWAY_API_KEY`, `ANT_LING_API_KEY` |
+| `xiaomi`, `xiaomi-token-plan-cn`, `xiaomi-token-plan-ams`, `xiaomi-token-plan-sgp` | `XIAOMI_API_KEY`, `XIAOMI_TOKEN_PLAN_CN_API_KEY`, `XIAOMI_TOKEN_PLAN_AMS_API_KEY`, `XIAOMI_TOKEN_PLAN_SGP_API_KEY` |
+
+If one of these environment variables is set, Atlas automatically adds that
+provider's default model to `/model`; a hand-written model block is no longer
+required for the first model. User-defined connections and models still take
+precedence.
+
+The preset registry is adapted from Pi's provider catalog. Atlas currently
+ports providers that fit its Responses, Chat Completions, or Anthropic Messages
+adapters. Amazon Bedrock, Google Vertex, Azure OpenAI Responses, Cloudflare's
+account-scoped endpoints, and native provider transports remain separate
+follow-up work rather than being advertised as compatible presets.
+
+LiteLLM Proxy is included as an OpenAI-compatible preset (`http://localhost:4000/v1` by
+default, and `/login litellm` lets you override it). When adding LiteLLM or another OpenAI-compatible custom endpoint,
+Atlas attempts `GET /models` using the entered key and saves all returned model
+ids for that connection. If a gateway disables model listing, setup falls back
+to a manually entered model id.
 
 A user-defined `[connection.<id>]` with the same id fully overrides the built-in
 (e.g. to route through a proxy).

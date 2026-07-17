@@ -36,6 +36,19 @@ use xai_grok_sampling_types::ApiBackend;
 
 use crate::agent::config::{EnvKeys, ModelEntry};
 
+/// A built-in API-key provider that can reuse one of Atlas's existing wire
+/// adapters. The registry is intentionally data-only: adding another
+/// OpenAI-compatible or Anthropic-compatible provider should not require
+/// changing the login UI, model resolver, or request client.
+#[derive(Clone, Debug)]
+pub struct ApiKeyProviderPreset {
+    pub id: &'static str,
+    pub display_name: &'static str,
+    pub env_key: &'static str,
+    pub default_model: &'static str,
+    pub connection: ConnectionConfig,
+}
+
 /// How a connection authenticates. Externally tagged so TOML reads naturally:
 ///
 /// ```toml
@@ -207,16 +220,10 @@ impl ConnectionConfig {
 /// variable for each provider (matching Pi's `env-api-keys.ts` names). Models
 /// reference them by id, e.g. `[model.gpt-5.1] connection = "openai"`.
 pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
-    let mut m = IndexMap::new();
-    m.insert(
-        "openai".to_owned(),
-        ConnectionConfig {
-            adapter: Some(ApiBackend::Responses),
-            base_url: Some("https://api.openai.com/v1".to_owned()),
-            credential: CredentialRef::Env(EnvKeys::single("OPENAI_API_KEY")),
-            ..Default::default()
-        },
-    );
+    let mut m: IndexMap<String, ConnectionConfig> = api_key_provider_presets()
+        .into_iter()
+        .map(|preset| (preset.id.to_owned(), preset.connection))
+        .collect();
     m.insert(
         "openai-codex".to_owned(),
         ConnectionConfig {
@@ -234,21 +241,6 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
             .into_iter()
             .collect(),
             credential: CredentialRef::Oauth("openai-codex".to_owned()),
-            ..Default::default()
-        },
-    );
-    m.insert(
-        "anthropic".to_owned(),
-        ConnectionConfig {
-            adapter: Some(ApiBackend::Messages),
-            base_url: Some("https://api.anthropic.com/v1".to_owned()),
-            // Anthropic Messages authenticates with `x-api-key`, not Bearer, and
-            // requires an API version header.
-            auth_scheme: Some(AuthScheme::XApiKey),
-            extra_headers: [("anthropic-version".to_owned(), "2023-06-01".to_owned())]
-                .into_iter()
-                .collect(),
-            credential: CredentialRef::Env(EnvKeys::single("ANTHROPIC_API_KEY")),
             ..Default::default()
         },
     );
@@ -276,16 +268,255 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
             ..Default::default()
         },
     );
-    m.insert(
-        "openrouter".to_owned(),
-        ConnectionConfig {
-            adapter: Some(ApiBackend::ChatCompletions),
-            base_url: Some("https://openrouter.ai/api/v1".to_owned()),
-            credential: CredentialRef::Env(EnvKeys::single("OPENROUTER_API_KEY")),
-            ..Default::default()
-        },
-    );
     m
+}
+
+/// API-key providers ported from Pi's provider registry that are compatible
+/// with Atlas's current adapters. Providers that need a distinct transport
+/// (Bedrock Converse, native Gemini/Vertex, Azure Responses) are deliberately
+/// excluded instead of being presented as working connections.
+pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
+    fn openai_compatible(
+        id: &'static str,
+        display_name: &'static str,
+        base_url: &'static str,
+        env_key: &'static str,
+        default_model: &'static str,
+    ) -> ApiKeyProviderPreset {
+        ApiKeyProviderPreset {
+            id,
+            display_name,
+            env_key,
+            default_model,
+            connection: ConnectionConfig {
+                adapter: Some(ApiBackend::ChatCompletions),
+                base_url: Some(base_url.to_owned()),
+                credential: CredentialRef::Env(EnvKeys::single(env_key)),
+                ..Default::default()
+            },
+        }
+    }
+
+    fn anthropic_compatible(
+        id: &'static str,
+        display_name: &'static str,
+        base_url: &'static str,
+        env_key: &'static str,
+        default_model: &'static str,
+    ) -> ApiKeyProviderPreset {
+        ApiKeyProviderPreset {
+            id,
+            display_name,
+            env_key,
+            default_model,
+            connection: ConnectionConfig {
+                adapter: Some(ApiBackend::Messages),
+                base_url: Some(base_url.to_owned()),
+                auth_scheme: Some(AuthScheme::XApiKey),
+                extra_headers: [("anthropic-version".to_owned(), "2023-06-01".to_owned())]
+                    .into_iter()
+                    .collect(),
+                credential: CredentialRef::Env(EnvKeys::single(env_key)),
+                ..Default::default()
+            },
+        }
+    }
+
+    let mut providers = vec![
+        ApiKeyProviderPreset {
+            id: "openai",
+            display_name: "OpenAI",
+            env_key: "OPENAI_API_KEY",
+            default_model: "gpt-5.5",
+            connection: ConnectionConfig {
+                adapter: Some(ApiBackend::Responses),
+                base_url: Some("https://api.openai.com/v1".to_owned()),
+                credential: CredentialRef::Env(EnvKeys::single("OPENAI_API_KEY")),
+                ..Default::default()
+            },
+        },
+        anthropic_compatible(
+            "anthropic",
+            "Anthropic",
+            "https://api.anthropic.com/v1",
+            "ANTHROPIC_API_KEY",
+            "claude-opus-4-8",
+        ),
+        openai_compatible(
+            "openrouter",
+            "OpenRouter",
+            "https://openrouter.ai/api/v1",
+            "OPENROUTER_API_KEY",
+            "moonshotai/kimi-k2.6",
+        ),
+        // LiteLLM's proxy implements the OpenAI-compatible surface. The
+        // endpoint is intentionally the local default; `/login litellm`
+        // prompts for a distinct connection name and lets users override it
+        // for a remote proxy.
+        openai_compatible(
+            "litellm",
+            "LiteLLM Proxy",
+            "http://localhost:4000/v1",
+            "LITELLM_API_KEY",
+            "gpt-4o",
+        ),
+        openai_compatible(
+            "deepseek",
+            "DeepSeek",
+            "https://api.deepseek.com",
+            "DEEPSEEK_API_KEY",
+            "deepseek-v4-pro",
+        ),
+        openai_compatible(
+            "google",
+            "Google Gemini",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "GEMINI_API_KEY",
+            "gemini-3.1-pro-preview",
+        ),
+        openai_compatible(
+            "groq",
+            "Groq",
+            "https://api.groq.com/openai/v1",
+            "GROQ_API_KEY",
+            "openai/gpt-oss-120b",
+        ),
+        openai_compatible(
+            "cerebras",
+            "Cerebras",
+            "https://api.cerebras.ai/v1",
+            "CEREBRAS_API_KEY",
+            "zai-glm-4.7",
+        ),
+        openai_compatible(
+            "nvidia",
+            "NVIDIA NIM",
+            "https://integrate.api.nvidia.com/v1",
+            "NVIDIA_API_KEY",
+            "nvidia/nemotron-3-super-120b-a12b",
+        ),
+        openai_compatible(
+            "zai",
+            "Z.AI",
+            "https://api.z.ai/api/coding/paas/v4",
+            "ZAI_API_KEY",
+            "glm-5.1",
+        ),
+        openai_compatible(
+            "zai-coding-cn",
+            "Z.AI Coding CN",
+            "https://open.bigmodel.cn/api/coding/paas/v4",
+            "ZAI_CODING_CN_API_KEY",
+            "glm-5.1",
+        ),
+        openai_compatible(
+            "mistral",
+            "Mistral",
+            "https://api.mistral.ai/v1",
+            "MISTRAL_API_KEY",
+            "devstral-medium-latest",
+        ),
+        anthropic_compatible(
+            "minimax",
+            "MiniMax",
+            "https://api.minimax.io/anthropic/v1",
+            "MINIMAX_API_KEY",
+            "MiniMax-M2.7",
+        ),
+        anthropic_compatible(
+            "minimax-cn",
+            "MiniMax CN",
+            "https://api.minimaxi.com/anthropic/v1",
+            "MINIMAX_CN_API_KEY",
+            "MiniMax-M2.7",
+        ),
+        openai_compatible(
+            "moonshotai",
+            "Moonshot AI",
+            "https://api.moonshot.ai/v1",
+            "MOONSHOT_API_KEY",
+            "kimi-k2.6",
+        ),
+        openai_compatible(
+            "moonshotai-cn",
+            "Moonshot AI CN",
+            "https://api.moonshot.cn/v1",
+            "MOONSHOT_API_KEY",
+            "kimi-k2.6",
+        ),
+        openai_compatible(
+            "huggingface",
+            "Hugging Face",
+            "https://router.huggingface.co/v1",
+            "HF_TOKEN",
+            "moonshotai/Kimi-K2.6",
+        ),
+        anthropic_compatible(
+            "fireworks",
+            "Fireworks",
+            "https://api.fireworks.ai/inference/v1",
+            "FIREWORKS_API_KEY",
+            "accounts/fireworks/models/kimi-k2p6",
+        ),
+        openai_compatible(
+            "together",
+            "Together AI",
+            "https://api.together.ai/v1",
+            "TOGETHER_API_KEY",
+            "moonshotai/Kimi-K2.6",
+        ),
+        anthropic_compatible(
+            "kimi-coding",
+            "Kimi For Coding",
+            "https://api.kimi.com/coding/v1",
+            "KIMI_API_KEY",
+            "kimi-for-coding",
+        ),
+        anthropic_compatible(
+            "vercel-ai-gateway",
+            "Vercel AI Gateway",
+            "https://ai-gateway.vercel.sh/v1",
+            "AI_GATEWAY_API_KEY",
+            "zai/glm-5.1",
+        ),
+        openai_compatible(
+            "xiaomi",
+            "Xiaomi MiMo",
+            "https://api.xiaomimimo.com/v1",
+            "XIAOMI_API_KEY",
+            "mimo-v2.5-pro",
+        ),
+        openai_compatible(
+            "xiaomi-token-plan-cn",
+            "Xiaomi MiMo Token Plan (China)",
+            "https://token-plan-cn.xiaomimimo.com/v1",
+            "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+            "mimo-v2.5-pro",
+        ),
+        openai_compatible(
+            "xiaomi-token-plan-ams",
+            "Xiaomi MiMo Token Plan (Amsterdam)",
+            "https://token-plan-ams.xiaomimimo.com/v1",
+            "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+            "mimo-v2.5-pro",
+        ),
+        openai_compatible(
+            "xiaomi-token-plan-sgp",
+            "Xiaomi MiMo Token Plan (Singapore)",
+            "https://token-plan-sgp.xiaomimimo.com/v1",
+            "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+            "mimo-v2.5-pro",
+        ),
+        openai_compatible(
+            "ant-ling",
+            "Ant Ling",
+            "https://api.ant-ling.com/v1",
+            "ANT_LING_API_KEY",
+            "Ring-2.6-1T",
+        ),
+    ];
+    providers.sort_by(|a, b| a.display_name.cmp(b.display_name));
+    providers
 }
 
 /// Resolve a connection id against user-defined connections first, then the
@@ -445,10 +676,14 @@ mod tests {
     #[test]
     fn command_value_uses_stdout() {
         assert_eq!(
-            resolve_config_value_with("!echo hunter2", |_| None, |cmd| {
-                assert_eq!(cmd, "echo hunter2");
-                Some("hunter2".to_owned())
-            }),
+            resolve_config_value_with(
+                "!echo hunter2",
+                |_| None,
+                |cmd| {
+                    assert_eq!(cmd, "echo hunter2");
+                    Some("hunter2".to_owned())
+                }
+            ),
             Some("hunter2".to_owned())
         );
     }
@@ -456,9 +691,7 @@ mod tests {
     #[test]
     fn credential_ref_toml_shapes() {
         // Unit variant reads as a bare string.
-        let xai: CredentialRef = toml::from_str("v = \"xai\"")
-            .map(|w: Wrap| w.v)
-            .unwrap();
+        let xai: CredentialRef = toml::from_str("v = \"xai\"").map(|w: Wrap| w.v).unwrap();
         assert_eq!(xai, CredentialRef::Xai);
 
         let api: CredentialRef = toml::from_str("v = { api_key = \"$OPENAI_API_KEY\" }")
@@ -481,6 +714,33 @@ mod tests {
         assert_eq!(
             codex.extra_headers.get("originator").map(String::as_str),
             Some("codex_cli_rs")
+        );
+    }
+
+    #[test]
+    fn api_key_presets_are_unique_and_routable() {
+        let presets = api_key_provider_presets();
+        assert_eq!(presets.len(), 26);
+        let mut ids = std::collections::HashSet::new();
+        for preset in presets {
+            assert!(ids.insert(preset.id), "duplicate provider id {}", preset.id);
+            assert!(!preset.env_key.is_empty());
+            assert!(!preset.default_model.is_empty());
+            assert!(preset.connection.adapter.is_some());
+            assert!(preset.connection.base_url.is_some());
+            assert!(matches!(
+                preset.connection.credential,
+                CredentialRef::Env(_)
+            ));
+        }
+        let litellm = api_key_provider_presets()
+            .into_iter()
+            .find(|preset| preset.id == "litellm")
+            .expect("LiteLLM preset should be registered");
+        assert_eq!(litellm.env_key, "LITELLM_API_KEY");
+        assert_eq!(
+            litellm.connection.base_url.as_deref(),
+            Some("http://localhost:4000/v1")
         );
     }
 

@@ -3181,7 +3181,7 @@ pub fn resolve_model_list(
         }
         resolved = prefetched;
     }
-    add_builtin_subscription_models(cfg, &mut resolved);
+    add_builtin_connection_models(cfg, &mut resolved);
     for (key, model_override) in &cfg.config_models {
         let had_base = resolved.contains_key(key);
         let mut base = resolved.shift_remove(key);
@@ -3189,7 +3189,9 @@ pub fn resolve_model_list(
         // endpoint/adapter/credential as the base; the model's own fields are
         // applied on top by `ConfigModelOverride::apply` and always win.
         if let Some(conn_id) = &model_override.connection {
-            let mut seed = base.take().unwrap_or_else(|| ModelEntry::fallback(key, &cfg.endpoints));
+            let mut seed = base
+                .take()
+                .unwrap_or_else(|| ModelEntry::fallback(key, &cfg.endpoints));
             let builtins = crate::agent::connection::builtin_connections();
             match crate::agent::connection::resolve_connection(&cfg.connections, conn_id, &builtins)
             {
@@ -3267,17 +3269,83 @@ pub fn resolve_model_list(
     apply_global_extra_headers(&mut resolved, &cfg.models);
     apply_global_scalar_defaults(&mut resolved, &cfg.models);
     for entry in resolved.values_mut() {
+        apply_vendor_reasoning_efforts(&mut entry.info);
         entry.info.derive_reasoning_effort_fields();
     }
     resolved
 }
 
-fn add_builtin_subscription_models(cfg: &Config, resolved: &mut IndexMap<String, ModelEntry>) {
+/// OpenAI-compatible gateways often return only bare model ids from
+/// `/v1/models`. Restore the effort picker for Gemini and Claude families
+/// without overriding explicit provider metadata or user configuration.
+fn apply_vendor_reasoning_efforts(info: &mut ModelInfo) {
+    if !info.reasoning_efforts.is_empty() {
+        return;
+    }
+    let model = info.model.to_ascii_lowercase();
+    if !(model.starts_with("gemini") || model.starts_with("claude")) {
+        return;
+    }
+    info.reasoning_efforts = [
+        (ReasoningEffort::Low, "low", "Low", false),
+        (ReasoningEffort::Medium, "medium", "Medium", true),
+        (ReasoningEffort::High, "high", "High", false),
+    ]
+    .into_iter()
+    .map(|(value, id, label, default)| ReasoningEffortOption {
+        value,
+        id: id.to_owned(),
+        label: label.to_owned(),
+        description: None,
+        default,
+    })
+    .collect();
+}
+
+fn add_builtin_connection_models(cfg: &Config, resolved: &mut IndexMap<String, ModelEntry>) {
     let path = crate::agent::credential_store::CredentialStore::default_path();
     let Ok(store) = crate::agent::credential_store::CredentialStore::load(&path) else {
         return;
     };
+    add_builtin_api_key_models_with_store(cfg, resolved, &store);
     add_builtin_subscription_models_with_store(cfg, resolved, &store);
+}
+
+/// Seed one useful model for every built-in API-key provider whose conventional
+/// environment variable is set. This is the Pi-style zero-config path:
+/// exporting a provider key is enough to make that provider appear in
+/// `/model`, while users can still add or override arbitrary models in TOML.
+fn add_builtin_api_key_models_with_store(
+    cfg: &Config,
+    resolved: &mut IndexMap<String, ModelEntry>,
+    store: &crate::agent::credential_store::CredentialStore,
+) {
+    let builtins = crate::agent::connection::builtin_connections();
+    for preset in crate::agent::connection::api_key_provider_presets() {
+        let catalog_id = format!("{}/{}", preset.id, preset.default_model);
+        if resolved.contains_key(&catalog_id) {
+            continue;
+        }
+        let Some(connection) =
+            crate::agent::connection::resolve_connection(&cfg.connections, preset.id, &builtins)
+        else {
+            continue;
+        };
+        let mut entry = ModelEntry::fallback(preset.default_model, &cfg.endpoints);
+        connection.apply_as_base_with_store(&mut entry, store);
+        if !entry.has_own_credentials() {
+            continue;
+        }
+        entry.info.name = Some(format!(
+            "{} · {}",
+            preset.display_name, preset.default_model
+        ));
+        entry.info.description = Some(format!(
+            "{} via the {} connection",
+            preset.default_model, preset.display_name
+        ));
+        resolved.insert(catalog_id, entry);
+    }
 }
 
 fn add_builtin_subscription_models_with_store(
@@ -3285,9 +3353,11 @@ fn add_builtin_subscription_models_with_store(
     resolved: &mut IndexMap<String, ModelEntry>,
     store: &crate::agent::credential_store::CredentialStore,
 ) {
-    if crate::agent::provider_catalog::add_cached_openai_codex_models(cfg, resolved, store) == 0 {
-        add_builtin_openai_subscription_model(cfg, resolved, store);
-    }
+    crate::agent::provider_catalog::add_cached_openai_codex_models(cfg, resolved, store);
+    // The account-scoped endpoint is authoritative when it knows about a
+    // model, but its rollout is occasionally incomplete. Keep these Codex
+    // choices available during that gap without overwriting server metadata.
+    add_builtin_openai_subscription_model(cfg, resolved, store);
     add_builtin_anthropic_subscription_model(cfg, resolved, store);
 }
 
@@ -3296,8 +3366,35 @@ fn add_builtin_openai_subscription_model(
     resolved: &mut IndexMap<String, ModelEntry>,
     store: &crate::agent::credential_store::CredentialStore,
 ) {
-    const MODEL_ID: &str = "gpt-5.4";
-    const CATALOG_ID: &str = "openai-codex/gpt-5.4";
+    const FALLBACK_MODELS: &[(&str, &str, &str)] = &[
+        ("gpt-5.6-sol", "5.6 Sol", "Frontier agentic coding model"),
+        (
+            "gpt-5.6-terra",
+            "5.6 Terra",
+            "Balanced agentic coding model",
+        ),
+        (
+            "gpt-5.6-luna",
+            "5.6 Luna",
+            "Fast and affordable agentic coding model",
+        ),
+        (
+            "gpt-5.5",
+            "5.5",
+            "Frontier model for complex coding and research",
+        ),
+        ("gpt-5.4", "5.4", "General-purpose Codex model"),
+        (
+            "gpt-5.4-mini",
+            "5.4 Mini",
+            "Small, fast, cost-efficient coding model",
+        ),
+        (
+            "gpt-5.3-codex-spark",
+            "5.3 Codex Spark",
+            "Fast Codex model for lightweight coding tasks",
+        ),
+    ];
 
     let builtins = crate::agent::connection::builtin_connections();
     let Some(connection) =
@@ -3306,15 +3403,72 @@ fn add_builtin_openai_subscription_model(
         return;
     };
 
-    let mut entry = ModelEntry::fallback(MODEL_ID, &cfg.endpoints);
-    connection.apply_as_base_with_store(&mut entry, store);
-    if !entry.has_own_credentials() {
-        return;
+    for &(model_id, name, description) in FALLBACK_MODELS {
+        let catalog_id = format!("openai-codex/{model_id}");
+        // Never replace server-supplied descriptions, context windows, or
+        // reasoning tiers. These entries fill only models absent from discovery.
+        if resolved.contains_key(&catalog_id) {
+            continue;
+        }
+        let mut entry = ModelEntry::fallback(model_id, &cfg.endpoints);
+        connection.apply_as_base_with_store(&mut entry, store);
+        if !entry.has_own_credentials() {
+            return;
+        }
+        entry.info.name = Some(name.to_owned());
+        entry.info.description = Some(description.to_owned());
+        entry.info.context_window = NonZeroU64::new(272_000).expect("272000 is non-zero");
+        // These entries are used only when account-scoped Codex discovery has
+        // not supplied metadata for a model. They still need the same basic
+        // effort controls as the discovered Codex models; without this, the
+        // TUI correctly treats the fallback as non-reasoning and hides
+        // `/effort` (notably for gpt-5.3-codex-spark).
+        entry.info.reasoning_efforts = codex_fallback_reasoning_efforts();
+        entry.info.reasoning_effort = Some(ReasoningEffort::Medium);
+        entry.info.supports_reasoning_effort = true;
+        resolved.insert(catalog_id, entry);
     }
-    entry.info.name = Some("GPT-5.4 (ChatGPT)".to_owned());
-    entry.info.description = Some("OpenAI Codex through your ChatGPT subscription".to_owned());
-    entry.info.context_window = NonZeroU64::new(272_000).expect("272000 is non-zero");
-    resolved.insert(CATALOG_ID.to_owned(), entry);
+}
+
+/// Conservative Codex effort menu used only for bundled fallbacks. The live
+/// account catalog remains authoritative and replaces this with any
+/// model-specific tiers it advertises.
+fn codex_fallback_reasoning_efforts() -> Vec<ReasoningEffortOption> {
+    [
+        (
+            ReasoningEffort::Low,
+            "low",
+            "Low",
+            "Fast responses with lighter reasoning",
+        ),
+        (
+            ReasoningEffort::Medium,
+            "medium",
+            "Medium",
+            "Balances speed and reasoning depth for everyday tasks",
+        ),
+        (
+            ReasoningEffort::High,
+            "high",
+            "High",
+            "Greater reasoning depth for complex problems",
+        ),
+        (
+            ReasoningEffort::Xhigh,
+            "xhigh",
+            "Xhigh",
+            "Extra high reasoning depth for complex problems",
+        ),
+    ]
+    .into_iter()
+    .map(|(value, id, label, description)| ReasoningEffortOption {
+        value,
+        id: id.to_owned(),
+        label: label.to_owned(),
+        description: Some(description.to_owned()),
+        default: value == ReasoningEffort::Medium,
+    })
+    .collect()
 }
 
 fn add_builtin_anthropic_subscription_model(
@@ -4946,6 +5100,20 @@ pub fn to_acp_model_info(
                         reasoning_efforts_meta_value(&info.reasoning_efforts),
                     );
                 }
+                // The ChatGPT Codex connection exposes Fast as the priority
+                // service tier. Keep this provider-specific capability in ACP
+                // metadata so clients can offer `/fast` without presenting it
+                // for xAI, Anthropic, or arbitrary BYOK models.
+                if info.base_url.contains("chatgpt.com/backend-api/codex") {
+                    map.insert(
+                        "serviceTiers".to_string(),
+                        serde_json::json!([{
+                            "id": "priority",
+                            "name": "Fast",
+                            "description": "Faster responses at higher plan usage"
+                        }]),
+                    );
+                }
                 if map.is_empty() { None } else { Some(map) }
             };
             (
@@ -5048,6 +5216,21 @@ mod tests {
         let mut models = IndexMap::new();
         add_builtin_subscription_models_with_store(&cfg, &mut models, &store);
 
+        for model_id in [
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.3-codex-spark",
+        ] {
+            assert!(
+                models.contains_key(&format!("openai-codex/{model_id}")),
+                "missing Codex fallback model {model_id}"
+            );
+        }
+
         let model = models
             .get("openai-codex/gpt-5.4")
             .expect("ChatGPT model is added");
@@ -5059,6 +5242,27 @@ mod tests {
             Some(&"account-123".to_owned())
         );
         assert_eq!(model.info.context_window.get(), 272_000);
+        assert!(model.info.supports_reasoning_effort);
+        assert_eq!(model.info.reasoning_effort, Some(ReasoningEffort::Medium));
+
+        let spark = models
+            .get("openai-codex/gpt-5.3-codex-spark")
+            .expect("Codex Spark fallback is added");
+        assert!(spark.info.supports_reasoning_effort);
+        assert_eq!(
+            spark
+                .info
+                .reasoning_efforts
+                .iter()
+                .map(|option| option.value)
+                .collect::<Vec<_>>(),
+            vec![
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+                ReasoningEffort::Xhigh,
+            ]
+        );
     }
 
     #[test]
@@ -11005,6 +11209,35 @@ default = "grok-4.5"
             .collect();
         assert_eq!(ids, ["low", "high"]);
         assert_eq!(shorthand.reasoning_efforts[0].label, "Low");
+    }
+
+    #[test]
+    fn gemini_and_claude_models_get_compatible_effort_menus() {
+        let raw_config: toml::Value = toml::from_str(
+            r#"
+            [model.gemini]
+            model = "gemini-3.5-flash"
+            [model.claude]
+            model = "claude-sonnet-4-6"
+            [model.other]
+            model = "other-model"
+            "#,
+        )
+        .unwrap();
+        let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
+        let resolved = resolve_model_list(&cfg, None);
+        for id in ["gemini", "claude"] {
+            let info = &resolved[id].info;
+            assert!(info.supports_reasoning_effort);
+            assert_eq!(info.reasoning_effort, Some(ReasoningEffort::Medium));
+            let ids: Vec<_> = info
+                .reasoning_efforts
+                .iter()
+                .map(|option| option.id.as_str())
+                .collect();
+            assert_eq!(ids, ["low", "medium", "high"]);
+        }
+        assert!(resolved["other"].info.reasoning_efforts.is_empty());
     }
     #[test]
     fn resolve_model_list_config_reasoning_efforts_beats_remote() {

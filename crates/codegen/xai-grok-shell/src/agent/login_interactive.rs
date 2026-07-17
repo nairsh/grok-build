@@ -11,43 +11,32 @@
 
 use std::io::Write;
 
+use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use xai_grok_sampler::AuthScheme;
 use xai_grok_sampling_types::ApiBackend;
 
 use crate::agent::config::Config;
-use crate::agent::connection::{ConnectionConfig, CredentialRef};
+use crate::agent::connection::{
+    ApiKeyProviderPreset, ConnectionConfig, CredentialRef, api_key_provider_presets,
+};
 use crate::agent::credential_store::{Credential, CredentialStore, login_and_store};
 use crate::agent::oauth_providers::SubscriptionProvider;
 
 /// Show the interactive sign-in menu and run the chosen flow.
 pub async fn run_interactive_login(config: &Config) -> anyhow::Result<()> {
     loop {
-        println!("\nSelect a sign-in method:\n");
-        println!("  1) xAI / Grok            (subscription sign-in)");
-        println!("  2) Claude Pro/Max        (Anthropic subscription OAuth)");
-        println!("  3) ChatGPT (Codex)       (OpenAI subscription OAuth)");
-        println!("  4) GitHub Copilot        (device-code sign-in)");
-        println!("  5) Add an API key        (any provider)");
+        println!("\nAtlas provider setup\n");
+        println!("  1) Connect a subscription   xAI, Claude, or ChatGPT");
+        println!("  2) Add an API key           26 built-in providers");
+        println!("  3) Add a custom endpoint    OpenAI/Anthropic compatible");
         println!("  q) Cancel\n");
 
         let choice = prompt_line("Enter choice: ").await?;
         match choice.trim() {
-            "1" => {
-                crate::auth::run_cli_login(config, false, false, false).await?;
-                return Ok(());
-            }
-            "2" => return subscription_login(SubscriptionProvider::Anthropic).await,
-            "3" => return subscription_login(SubscriptionProvider::OpenAiCodex).await,
-            "4" => {
-                println!(
-                    "\nGitHub Copilot uses a device-code flow that isn't wired into this menu \
-                     yet.\nTrack it under credential id \"{}\".",
-                    SubscriptionProvider::GithubCopilot.id()
-                );
-                return Ok(());
-            }
-            "5" => return add_api_key().await,
+            "1" => return subscription_menu(config).await,
+            "2" => return api_key_menu().await,
+            "3" => return add_api_key(None).await,
             "q" | "Q" | "" => {
                 println!("Cancelled.");
                 return Ok(());
@@ -57,6 +46,105 @@ pub async fn run_interactive_login(config: &Config) -> anyhow::Result<()> {
             }
         }
     }
+}
+
+/// Run setup for a named provider without walking the top-level menu. This is
+/// used by `atlas login <provider>` and keeps scripting/autocomplete stable as
+/// the interactive catalog grows.
+pub async fn run_provider_login(config: &Config, provider: &str) -> anyhow::Result<()> {
+    let normalized = provider.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "xai" | "grok" | "grok.com" => {
+            crate::auth::run_cli_login(config, false, false, false).await
+        }
+        "claude" | "claude-subscription" | "anthropic-subscription" => {
+            subscription_login(SubscriptionProvider::Anthropic).await
+        }
+        "chatgpt" | "codex" | "openai-codex" => {
+            subscription_login(SubscriptionProvider::OpenAiCodex).await
+        }
+        "github-copilot" | "copilot" => copilot_not_yet_available(),
+        "custom" => add_api_key(None).await,
+        _ => {
+            let presets = api_key_provider_presets();
+            let preset = presets.into_iter().find(|preset| {
+                preset.id.eq_ignore_ascii_case(&normalized)
+                    || preset.display_name.eq_ignore_ascii_case(provider.trim())
+            });
+            match preset {
+                Some(preset) => add_api_key(Some(preset)).await,
+                None => anyhow::bail!(
+                    "unknown provider {provider:?}; run `atlas login` to see available providers"
+                ),
+            }
+        }
+    }
+}
+
+async fn subscription_menu(config: &Config) -> anyhow::Result<()> {
+    println!("\nSubscriptions\n");
+    println!("  1) xAI / Grok");
+    println!("  2) Claude Pro/Max");
+    println!("  3) ChatGPT Plus/Pro (Codex)");
+    println!("  4) GitHub Copilot");
+    println!("  q) Cancel\n");
+    match prompt_line("Enter choice: ").await?.trim() {
+        "1" => crate::auth::run_cli_login(config, false, false, false).await,
+        "2" => subscription_login(SubscriptionProvider::Anthropic).await,
+        "3" => subscription_login(SubscriptionProvider::OpenAiCodex).await,
+        "4" => copilot_not_yet_available(),
+        "q" | "Q" | "" => {
+            println!("Cancelled.");
+            Ok(())
+        }
+        _ => anyhow::bail!("unrecognized subscription choice"),
+    }
+}
+
+fn copilot_not_yet_available() -> anyhow::Result<()> {
+    anyhow::bail!(
+        "GitHub Copilot's device-code transport is not implemented yet; \
+         use another provider for now"
+    )
+}
+
+async fn api_key_menu() -> anyhow::Result<()> {
+    let presets = api_key_provider_presets();
+    println!("\nAPI-key providers\n");
+    for (index, preset) in presets.iter().enumerate() {
+        let configured = std::env::var(preset.env_key)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty());
+        println!(
+            "  {:>2}) {:<34} {}{}",
+            index + 1,
+            preset.display_name,
+            preset.env_key,
+            if configured { "  ✓ env set" } else { "" },
+        );
+    }
+    println!("   b) Back\n");
+    let choice = prompt_line("Provider number or name: ").await?;
+    let choice = choice.trim();
+    if matches!(choice, "" | "b" | "B") {
+        println!("Cancelled.");
+        return Ok(());
+    }
+    let preset = resolve_preset_choice(&presets, choice)
+        .ok_or_else(|| anyhow::anyhow!("unknown provider {choice:?}"))?;
+    add_api_key(Some(preset.clone())).await
+}
+
+fn resolve_preset_choice<'a>(
+    presets: &'a [ApiKeyProviderPreset],
+    choice: &str,
+) -> Option<&'a ApiKeyProviderPreset> {
+    if let Ok(number) = choice.parse::<usize>() {
+        return number.checked_sub(1).and_then(|index| presets.get(index));
+    }
+    presets.iter().find(|preset| {
+        preset.id.eq_ignore_ascii_case(choice) || preset.display_name.eq_ignore_ascii_case(choice)
+    })
 }
 
 /// Run a subscription OAuth flow and persist the tokens to the credential store.
@@ -90,20 +178,17 @@ async fn subscription_login(provider: SubscriptionProvider) -> anyhow::Result<()
 /// Prompt for a provider, credential, and model, then persist a complete usable
 /// connection. A saved key without a connection/model is deliberately avoided:
 /// it would look connected but could never route a prompt.
-async fn add_api_key() -> anyhow::Result<()> {
-    println!("\nSelect the API provider:\n");
-    println!("  1) OpenAI");
-    println!("  2) Anthropic");
-    println!("  3) OpenRouter");
-    println!("  4) Custom OpenAI-compatible endpoint\n");
-    let choice = prompt_line("Enter choice: ").await?;
-    let builtins = crate::agent::connection::builtin_connections();
-    let (provider_id, mut connection) = match choice.trim() {
-        "1" => ("openai".to_owned(), builtins["openai"].clone()),
-        "2" => ("anthropic".to_owned(), builtins["anthropic"].clone()),
-        "3" => ("openrouter".to_owned(), builtins["openrouter"].clone()),
-        "4" => custom_connection().await?,
-        _ => anyhow::bail!("unrecognized provider choice"),
+async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()> {
+    let (provider_id, default_model, mut connection) = match preset {
+        Some(preset) => (
+            preset.id.to_owned(),
+            Some(preset.default_model),
+            preset.connection,
+        ),
+        None => {
+            let (id, connection) = custom_connection().await?;
+            (id, None, connection)
+        }
     };
 
     let id = prompt_line(&format!(
@@ -111,34 +196,191 @@ async fn add_api_key() -> anyhow::Result<()> {
     ))
     .await?;
     let id = if id.trim().is_empty() {
-        provider_id
+        provider_id.clone()
     } else {
         id.trim().to_owned()
     };
-    // Note: the key is echoed. For secret-free entry, prefer an env var or a
-    // `credential = { api_key = "!command" }` in config.toml.
-    let key = prompt_line("API key: ").await?;
+    if provider_id == "litellm" {
+        let default_url = connection.base_url.as_deref().unwrap_or_default();
+        let base_url = prompt_line(&format!("LiteLLM API base URL [{default_url}]: ")).await?;
+        if !base_url.trim().is_empty() {
+            connection.base_url = Some(base_url.trim().trim_end_matches('/').to_owned());
+        }
+    }
+    let key = prompt_secret("API key (input hidden): ").await?;
     let key = key.trim().to_owned();
     anyhow::ensure!(!key.is_empty(), "API key must not be empty");
-    let model = prompt_line("Model id (the exact provider model name): ").await?;
-    let model = model.trim().to_owned();
+    let discovered_models = if matches!(
+        connection.adapter,
+        Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
+    ) {
+        match discover_openai_models(&connection, &key).await {
+            Ok(models) if !models.is_empty() => {
+                println!("\nFound {} models at this endpoint.", models.len());
+                models
+            }
+            Ok(_) => Vec::new(),
+            Err(error) => {
+                eprintln!("\nCould not fetch /models ({error}); enter a model id manually.");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let discovered_default = discovered_models.first().map(String::as_str);
+    let model_prompt = match default_model {
+        Some(default) => format!("Model id [{}]: ", discovered_default.unwrap_or(default)),
+        None if discovered_default.is_some() => {
+            format!(
+                "Model id [{}]: ",
+                discovered_default.expect("checked above")
+            )
+        }
+        None => "Model id (the exact provider model name): ".to_owned(),
+    };
+    let model = prompt_line(&model_prompt).await?;
+    let model = match (model.trim(), discovered_default.or(default_model)) {
+        ("", Some(default)) => default.to_owned(),
+        (value, _) => value.to_owned(),
+    };
     anyhow::ensure!(!model.is_empty(), "model id must not be empty");
 
-    let path = CredentialStore::default_path();
-    let mut store = CredentialStore::load(&path)?;
-    store.put(id.clone(), Credential::ApiKey { key: key.clone() });
-    store.save(&path)?;
-    connection.credential = CredentialRef::Named(id.clone());
-    if let Err(error) = save_provider_config(&id, &model, &connection) {
-        store.remove(&id);
-        let _ = store.save(&path);
-        return Err(error);
-    }
+    let models = if discovered_models.is_empty() {
+        vec![model.clone()]
+    } else {
+        discovered_models
+    };
+    save_api_key_connection(&id, &key, &models, connection)?;
     println!(
         "\n✓ Connected \"{id}\" using model \"{model}\".\n  Run `atlas` to start, \
          or `atlas models` to verify the model list."
     );
     Ok(())
+}
+
+/// Persist an API-key credential and its usable model connection.
+///
+/// Shared by the pre-TUI `atlas login` flow and the native `/login` modal so
+/// both routes produce identical credential and config files. The models are
+/// supplied by the caller: the CLI may use `/models` discovery while the TUI
+/// accepts a direct model id without ever putting the secret on a command line.
+pub fn save_api_key_connection(
+    connection_id: &str,
+    api_key: &str,
+    models: &[String],
+    mut connection: ConnectionConfig,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !connection_id.trim().is_empty(),
+        "connection name must not be empty"
+    );
+    anyhow::ensure!(!api_key.trim().is_empty(), "API key must not be empty");
+    anyhow::ensure!(!models.is_empty(), "at least one model is required");
+
+    let path = CredentialStore::default_path();
+    let mut store = CredentialStore::load(&path)?;
+    store.put(
+        connection_id,
+        Credential::ApiKey {
+            key: api_key.to_owned(),
+        },
+    );
+    store.save(&path)?;
+    connection.credential = CredentialRef::Named(connection_id.to_owned());
+    if let Err(error) = save_provider_config_models(connection_id, models, &connection) {
+        store.remove(connection_id);
+        let _ = store.save(&path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Native-TUI convenience wrapper around [`save_api_key_connection`].
+/// The pager depends only on the shell crate, so keep protocol details here
+/// instead of duplicating internal sampler dependencies in the UI crate.
+pub fn save_api_key_connection_for_provider(
+    provider_id: &str,
+    connection_id: &str,
+    api_key: &str,
+    model: String,
+    base_url: Option<String>,
+) -> anyhow::Result<()> {
+    let preset = api_key_provider_presets()
+        .into_iter()
+        .find(|preset| preset.id == provider_id);
+    let mut connection = match preset {
+        Some(preset) => preset.connection,
+        None => ConnectionConfig {
+            adapter: Some(ApiBackend::ChatCompletions),
+            base_url: base_url.clone(),
+            ..Default::default()
+        },
+    };
+    if let Some(base_url) = base_url {
+        let base_url = base_url.trim().trim_end_matches('/');
+        anyhow::ensure!(!base_url.is_empty(), "API base URL must not be empty");
+        connection.base_url = Some(base_url.to_owned());
+    }
+    save_api_key_connection(connection_id, api_key, &[model], connection)
+}
+
+/// Complete a subscription login from an embedded UI without requiring that UI
+/// to depend on `reqwest` or know the credential-store layout.
+pub async fn login_subscription_and_store(provider: SubscriptionProvider) -> anyhow::Result<()> {
+    let path = CredentialStore::default_path();
+    let client = reqwest::Client::new();
+    login_and_store(provider, &path, &client, true).await?;
+    if provider == SubscriptionProvider::OpenAiCodex
+        && let Err(error) =
+            crate::agent::provider_catalog::refresh_openai_codex_catalog_if_stale(true).await
+    {
+        tracing::warn!(%error, "ChatGPT model discovery failed after browser login");
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct OpenAiModelsResponse {
+    #[serde(default)]
+    data: Vec<OpenAiModel>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiModel {
+    id: String,
+}
+
+/// Fetch models from an OpenAI-compatible endpoint (including LiteLLM's
+/// proxy). Discovery is intentionally best-effort: private gateways commonly
+/// disable this endpoint, in which case the normal manual model prompt remains
+/// available.
+async fn discover_openai_models(
+    connection: &ConnectionConfig,
+    api_key: &str,
+) -> anyhow::Result<Vec<String>> {
+    let base_url = connection
+        .base_url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("connection has no base URL"))?
+        .trim_end_matches('/');
+    let response = reqwest::Client::new()
+        .get(format!("{base_url}/models"))
+        .bearer_auth(api_key)
+        .send()
+        .await?
+        .error_for_status()?;
+    let mut models = response
+        .json::<OpenAiModelsResponse>()
+        .await?
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .filter(|id| !id.trim().is_empty())
+        .collect::<Vec<_>>();
+    models.sort();
+    models.dedup();
+    Ok(models)
 }
 
 async fn custom_connection() -> anyhow::Result<(String, ConnectionConfig)> {
@@ -164,19 +406,28 @@ async fn custom_connection() -> anyhow::Result<(String, ConnectionConfig)> {
     ))
 }
 
-fn save_provider_config(
+fn save_provider_config_models(
     connection_id: &str,
-    model: &str,
+    models: &[String],
     connection: &ConnectionConfig,
 ) -> anyhow::Result<()> {
     let path = xai_grok_config::grok_home().join("config.toml");
-    save_provider_config_at(&path, connection_id, model, connection)
+    save_provider_config_models_at(&path, connection_id, models, connection)
 }
 
 fn save_provider_config_at(
     path: &std::path::Path,
     connection_id: &str,
     model: &str,
+    connection: &ConnectionConfig,
+) -> anyhow::Result<()> {
+    save_provider_config_models_at(path, connection_id, &[model.to_owned()], connection)
+}
+
+fn save_provider_config_models_at(
+    path: &std::path::Path,
+    connection_id: &str,
+    models: &[String],
     connection: &ConnectionConfig,
 ) -> anyhow::Result<()> {
     use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
@@ -227,16 +478,18 @@ fn save_provider_config_at(
         .ok_or_else(|| anyhow::anyhow!("config `connection` must be a table"))?
         .insert(connection_id, Item::Table(connection_table));
 
-    let catalog_id = format!("{connection_id}/{model}");
-    let mut model_table = Table::new();
-    model_table["connection"] = value(connection_id);
-    model_table["model"] = value(model);
-    document
+    let model_tables = document
         .entry("model")
         .or_insert_with(|| Item::Table(Table::new()))
         .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!("config `model` must be a table"))?
-        .insert(&catalog_id, Item::Table(model_table));
+        .ok_or_else(|| anyhow::anyhow!("config `model` must be a table"))?;
+    for model in models {
+        let catalog_id = format!("{connection_id}/{model}");
+        let mut model_table = Table::new();
+        model_table["connection"] = value(connection_id);
+        model_table["model"] = value(model);
+        model_tables.insert(&catalog_id, Item::Table(model_table));
+    }
 
     let parent = path
         .parent()
@@ -259,6 +512,53 @@ async fn prompt_line(prompt: &str) -> anyhow::Result<String> {
         // EOF (e.g. piped/non-interactive): treat as cancel.
         anyhow::bail!("no input (stdin closed); run in an interactive terminal");
     }
+    Ok(line)
+}
+
+/// Read a secret without echoing it when stdin is a Unix terminal. The
+/// terminal settings are restored by a guard even when reading fails.
+async fn prompt_secret(prompt: &str) -> anyhow::Result<String> {
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let line = tokio::task::spawn_blocking(read_secret_line)
+        .await
+        .map_err(|error| anyhow::anyhow!("secret input task failed: {error}"))??;
+    println!();
+    Ok(line)
+}
+
+#[cfg(unix)]
+fn read_secret_line() -> std::io::Result<String> {
+    use nix::sys::termios::{LocalFlags, SetArg, Termios, tcgetattr, tcsetattr};
+
+    struct EchoGuard {
+        stdin: std::io::Stdin,
+        original: Option<Termios>,
+    }
+    impl Drop for EchoGuard {
+        fn drop(&mut self) {
+            if let Some(original) = self.original.as_ref() {
+                let _ = tcsetattr(&self.stdin, SetArg::TCSANOW, original);
+            }
+        }
+    }
+
+    let stdin = std::io::stdin();
+    let original = tcgetattr(&stdin).ok();
+    if let Some(mut hidden) = original.clone() {
+        hidden.local_flags.remove(LocalFlags::ECHO);
+        tcsetattr(&stdin, SetArg::TCSANOW, &hidden).map_err(std::io::Error::other)?;
+    }
+    let guard = EchoGuard { stdin, original };
+    let mut line = String::new();
+    guard.stdin.read_line(&mut line)?;
+    Ok(line)
+}
+
+#[cfg(not(unix))]
+fn read_secret_line() -> std::io::Result<String> {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
     Ok(line)
 }
 
@@ -286,5 +586,23 @@ mod tests {
             .expect("model is configured");
         assert_eq!(model.connection.as_deref(), Some("openai-work"));
         assert_eq!(model.model.as_deref(), Some("gpt-test"));
+    }
+
+    #[test]
+    fn provider_choices_accept_number_id_and_display_name() {
+        let presets = api_key_provider_presets();
+        assert_eq!(
+            resolve_preset_choice(&presets, "1").map(|preset| preset.id),
+            presets.first().map(|preset| preset.id)
+        );
+        assert_eq!(
+            resolve_preset_choice(&presets, "openrouter").map(|preset| preset.id),
+            Some("openrouter")
+        );
+        assert_eq!(
+            resolve_preset_choice(&presets, "Google Gemini").map(|preset| preset.id),
+            Some("google")
+        );
+        assert!(resolve_preset_choice(&presets, "not-a-provider").is_none());
     }
 }

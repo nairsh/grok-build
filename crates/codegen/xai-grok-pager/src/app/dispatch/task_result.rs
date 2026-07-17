@@ -171,6 +171,23 @@ fn drain_clipboard_target(target: &ClipboardPasteTarget, app: &mut AppView) -> V
 /// Handle a completed async task result.
 pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec<Effect> {
     match result {
+        TaskResult::ProviderOauthLoginComplete {
+            agent_id,
+            provider,
+            result,
+        } => {
+            if let Some(agent) = app.agents.get_mut(&agent_id)
+                && let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                    agent.active_modal.as_mut()
+            {
+                let result = match &result {
+                    Ok(()) => Ok(()),
+                    Err(error) => Err(error.as_str()),
+                };
+                state.finish_browser_login(&provider, result);
+            }
+            vec![]
+        }
         TaskResult::SessionCreated {
             agent_id,
             session_id,
@@ -456,9 +473,18 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             agent_id,
             model_id,
             effort,
+            service_tier_change,
             result,
             prev_model_id,
-        } => handle_switch_model_complete(app, agent_id, model_id, effort, result, prev_model_id),
+        } => handle_switch_model_complete(
+            app,
+            agent_id,
+            model_id,
+            effort,
+            service_tier_change,
+            result,
+            prev_model_id,
+        ),
         TaskResult::BgTaskKilled {
             session_id,
             task_id,

@@ -21,6 +21,7 @@ pub mod effort_levels;
 pub mod exit;
 pub mod expand;
 pub mod export;
+pub mod fast;
 pub mod feedback;
 pub mod find;
 pub mod fork;
@@ -79,7 +80,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(docs::DocsCommand),
         Arc::new(home::HomeCommand),
         Arc::new(new::NewCommand),
-        
         Arc::new(fork::ForkCommand),
         Arc::new(compact::CompactCommand),
         Arc::new(copy::CopyCommand),
@@ -92,6 +92,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(screen_mode_switch::ScreenModeSwitchCommand::minimal()),
         Arc::new(screen_mode_switch::ScreenModeSwitchCommand::fullscreen()),
         Arc::new(model::ModelCommand),
+        Arc::new(fast::FastCommand),
         Arc::new(effort::EffortCommand),
         Arc::new(always_approve::AlwaysApproveCommand),
         Arc::new(auto::AutoCommand),
@@ -117,7 +118,6 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(mcps::McpsCommand),
         Arc::new(btw::BtwCommand),
         Arc::new(recap::RecapCommand),
-        
         Arc::new(terminal_setup::TerminalSetupCommand),
         Arc::new(voice::VoiceCommand),
         Arc::new(loop_cmd::LoopCommand),

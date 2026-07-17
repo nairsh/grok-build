@@ -377,8 +377,12 @@ pub async fn run_loopback_login(
     let _ = socket.write_all(response.as_bytes()).await;
     let _ = socket.shutdown().await;
 
-    let code = code.ok_or_else(|| anyhow::anyhow!("callback did not include an authorization code"))?;
-    anyhow::ensure!(got_state.as_deref() == Some(state.as_str()), "OAuth state mismatch");
+    let code =
+        code.ok_or_else(|| anyhow::anyhow!("callback did not include an authorization code"))?;
+    anyhow::ensure!(
+        got_state.as_deref() == Some(state.as_str()),
+        "OAuth state mismatch"
+    );
     exchange_authorization_code(provider, &code, &state, &pkce, client).await
 }
 

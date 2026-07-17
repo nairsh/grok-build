@@ -349,6 +349,47 @@ fn run_pending_suspends(
     last_draw_at: &mut Instant,
     draw_scheduled_at: &mut Option<Instant>,
 ) {
+    // /login provider setup: hand the terminal to the same clean, line-based
+    // interface used by `atlas login`, then return to the intact session.
+    if let Some(provider) = app.pending_provider_login.take() {
+        let writer_sync = terminal.backend_mut().writer_mut().writer_sync().clone();
+        let mut child_succeeded = false;
+        let moved_cursor = suspend_for_child(
+            app.screen_mode,
+            &writer_sync,
+            input_paused,
+            reader_parked,
+            input_rx,
+            || {
+                let Ok(executable) = std::env::current_exe() else {
+                    return;
+                };
+                let mut command = std::process::Command::new(executable);
+                command.arg("login");
+                if !provider.is_empty() {
+                    command.arg(&provider);
+                }
+                child_succeeded = command.status().is_ok_and(|status| status.success());
+            },
+        );
+        restore_after_child(terminal, app.screen_mode, moved_cursor);
+        if let crate::app::app_view::ActiveView::Agent(id) = app.active_view
+            && let Some(agent) = app.agents.get_mut(&id)
+            && let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                agent.active_modal.as_mut()
+        {
+            state.refresh();
+        }
+        if child_succeeded {
+            app.show_toast("Provider setup closed. Restart Atlas to load newly added models.");
+        } else {
+            app.show_toast("Provider setup did not complete.");
+        }
+        app.draw(terminal);
+        *last_draw_at = Instant::now();
+        *draw_scheduled_at = None;
+    }
+
     // $EDITOR suspend: leave alt screen, disable raw mode, spawn
     // editor, wait for exit, then restore.
     if let Some(path) = app.pending_editor_path.take() {

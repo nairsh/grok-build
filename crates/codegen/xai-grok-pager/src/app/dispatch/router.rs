@@ -793,7 +793,11 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             }]
         }
         Action::NextModel => vec![],
-        Action::SwitchModel { model_id, effort } => {
+        Action::SwitchModel {
+            model_id,
+            effort,
+            service_tier_change,
+        } => {
             let ActiveView::Agent(id) = app.active_view else {
                 return vec![];
             };
@@ -810,6 +814,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 session_id,
                 model_id,
                 effort,
+                service_tier_change,
                 prev_model_id: None,
             }]
         }
@@ -1143,6 +1148,40 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             app.pending_editor_path = Some(path);
             app.pending_agents_modal_refresh = refresh_agents_modal;
             vec![]
+        }
+        Action::OpenProviderLogin { provider } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::ProviderLogin {
+                state: Box::new(
+                    crate::views::provider_login_modal::ProviderLoginModalState::new(provider),
+                ),
+            });
+            vec![]
+        }
+        Action::RunProviderLogin { provider } => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            match provider.as_str() {
+                "anthropic-subscription" | "openai-codex" => {
+                    vec![Effect::ProviderOauthLogin { agent_id, provider }]
+                }
+                "xai" => {
+                    // xAI uses the app's existing interactive auth view. It
+                    // remains in this process rather than launching a child.
+                    dispatch_login(app)
+                }
+                "github-copilot" => {
+                    app.show_toast("GitHub Copilot device-code login is not available yet.");
+                    vec![]
+                }
+                _ => vec![],
+            }
         }
         Action::OpenDashboard => dispatch_open_dashboard(app),
         Action::ExitDashboard => dispatch_exit_dashboard(app),

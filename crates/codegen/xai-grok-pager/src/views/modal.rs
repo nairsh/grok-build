@@ -290,6 +290,10 @@ pub enum ActiveModal {
     Settings {
         state: Box<crate::views::settings_modal::SettingsModalState>,
     },
+    /// Native provider connection and credential-management UI (`/login`).
+    ProviderLogin {
+        state: Box<crate::views::provider_login_modal::ProviderLoginModalState>,
+    },
     /// Reset-settings confirmation, stacked above Settings.
     ///
     /// The underlying `SettingsModalState` is moved in/out so cancel
@@ -612,6 +616,7 @@ impl ActiveModal {
             | ActiveModal::ShortcutsHelp { .. }
             | ActiveModal::MemoryBrowser { .. }
             | ActiveModal::Settings { .. }
+            | ActiveModal::ProviderLogin { .. }
             | ActiveModal::RememberNoteReview { .. } => vec![],
         }
     }
@@ -641,6 +646,7 @@ impl ActiveModal {
             ActiveModal::ShortcutsHelp { .. } => "Keyboard Shortcuts",
             ActiveModal::MemoryBrowser { .. } => "Memory",
             ActiveModal::Settings { .. } => crate::views::settings_modal::MODAL_TITLE,
+            ActiveModal::ProviderLogin { .. } => "Providers & login",
             ActiveModal::ResetSettingsConfirm { .. } => "Reset setting?",
             ActiveModal::RememberNoteReview { .. } => "Memory Note",
         }

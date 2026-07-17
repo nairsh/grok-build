@@ -133,10 +133,13 @@ pub async fn ensure_fresh(
     let fresh = refresh_tokens(provider, &refresh_token, client).await?;
     {
         let mut guard = store.write().expect("credential store lock poisoned");
-        guard.put(id, Credential::Oauth {
-            provider,
-            tokens: fresh,
-        });
+        guard.put(
+            id,
+            Credential::Oauth {
+                provider,
+                tokens: fresh,
+            },
+        );
         guard.save(path)?;
     }
     Ok(true)
@@ -199,8 +202,8 @@ pub async fn login_and_store(
     client: &reqwest::Client,
     open_browser: bool,
 ) -> anyhow::Result<String> {
-    let tokens = crate::agent::oauth_providers::run_loopback_login(provider, client, open_browser)
-        .await?;
+    let tokens =
+        crate::agent::oauth_providers::run_loopback_login(provider, client, open_browser).await?;
     let mut store = CredentialStore::load(path)?;
     let id = provider.id().to_owned();
     store.put(id.clone(), Credential::Oauth { provider, tokens });
@@ -237,10 +240,7 @@ impl std::fmt::Debug for StoreBearerResolver {
 
 impl xai_grok_sampler::BearerResolver for StoreBearerResolver {
     fn current_bearer(&self) -> Option<String> {
-        self.store
-            .read()
-            .ok()?
-            .current_bearer(&self.credential_id)
+        self.store.read().ok()?.current_bearer(&self.credential_id)
     }
 }
 
@@ -254,17 +254,23 @@ mod tests {
         let path = dir.path().join("credentials.json");
 
         let mut store = CredentialStore::default();
-        store.put("openrouter-work", Credential::ApiKey {
-            key: "sk-or-123".into(),
-        });
-        store.put("anthropic", Credential::Oauth {
-            provider: SubscriptionProvider::Anthropic,
-            tokens: OAuthTokens {
-                access: "acc".into(),
-                refresh: Some("ref".into()),
-                expires_at_ms: 9_999_999_999_999,
+        store.put(
+            "openrouter-work",
+            Credential::ApiKey {
+                key: "sk-or-123".into(),
             },
-        });
+        );
+        store.put(
+            "anthropic",
+            Credential::Oauth {
+                provider: SubscriptionProvider::Anthropic,
+                tokens: OAuthTokens {
+                    access: "acc".into(),
+                    refresh: Some("ref".into()),
+                    expires_at_ms: 9_999_999_999_999,
+                },
+            },
+        );
         store.save(&path).unwrap();
 
         let loaded = CredentialStore::load(&path).unwrap();

@@ -732,6 +732,9 @@ pub struct AppView {
     /// leaves the alternate screen, disables raw mode, spawns the editor,
     /// waits for it to exit, then restores the TUI.
     pub pending_editor_path: Option<std::path::PathBuf>,
+    /// Provider id to configure in the tty-taking `atlas login` child. An empty
+    /// string opens the child picker. Consumed by the event loop.
+    pub pending_provider_login: Option<String>,
     /// After `$EDITOR` exits, refresh the agents modal tab list if still open.
     pub pending_agents_modal_refresh: Option<crate::views::agents_modal::AgentsTab>,
     /// Path to open in `$PAGER` (default `less`) after the current event cycle.
@@ -1213,6 +1216,7 @@ impl AppView {
             welcome_tip_typing_dismissed: false,
             pending_effects: Vec::new(),
             pending_editor_path: None,
+            pending_provider_login: None,
             pending_agents_modal_refresh: None,
             pending_pager_path: None,
             pending_pager_ansi: false,
@@ -3821,6 +3825,13 @@ impl AppView {
                                 bold: false,
                             });
                         }
+                        if self.models.is_fast() {
+                            flags_vec.push(crate::views::prompt_widget::PromptFlag {
+                                text: "fast",
+                                color: Some(ratatui::style::Color::Yellow),
+                                bold: false,
+                            });
+                        }
                         if !self.welcome_prompt.text().is_empty() {
                             self.welcome_tip_typing_dismissed = true;
                         }
@@ -5206,6 +5217,7 @@ pub(crate) mod tests {
             screen_mode: ScreenMode::Inline,
             pending_effects: Vec::new(),
             pending_editor_path: None,
+            pending_provider_login: None,
             pending_agents_modal_refresh: None,
             pending_pager_path: None,
             pending_pager_ansi: false,

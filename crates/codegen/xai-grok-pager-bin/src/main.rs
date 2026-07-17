@@ -1879,6 +1879,7 @@ async fn async_main() -> Result<()> {
                 .await;
             }
             Command::Login {
+                provider,
                 legacy: _,
                 oauth,
                 device_auth,
@@ -1893,10 +1894,15 @@ async fn async_main() -> Result<()> {
                 // Bare `atlas login` opens the interactive menu (subscription
                 // OAuth or API key). Explicit flags keep the direct xAI path for
                 // scripts/backward compatibility.
-                if !oauth && !device_auth && !devbox {
-                    xai_grok_shell::agent::login_interactive::run_interactive_login(&config).await?;
+                if let Some(provider) = provider.as_deref() {
+                    xai_grok_shell::agent::login_interactive::run_provider_login(&config, provider)
+                        .await?;
+                } else if !oauth && !device_auth && !devbox {
+                    xai_grok_shell::agent::login_interactive::run_interactive_login(&config)
+                        .await?;
                 } else {
-                    xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
+                    xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox)
+                        .await?;
                 }
                 println!();
                 xai_grok_shell::instrumentation::finalize_and_exit(0);

@@ -388,6 +388,30 @@ impl AgentView {
             }
         }
 
+        // Provider login: use the same native modal chrome as Settings, then
+        // delegate provider navigation and credential actions to its state.
+        if let ActiveModal::ProviderLogin { state } = modal {
+            let chrome_cfg = mw::ModalWindowConfig {
+                title: "",
+                tabs: None,
+                shortcuts: &[],
+                sizing: mw::ModalSizing::default(),
+                fold_info: None,
+            };
+            match mw::handle_modal_key(&mut state.window, key, &chrome_cfg) {
+                ModalWindowOutcome::CloseRequested => {
+                    self.active_modal = None;
+                    return InputOutcome::Changed;
+                }
+                ModalWindowOutcome::Unhandled => {
+                    return crate::views::provider_login_modal::handle_provider_login_key(
+                        state, key,
+                    );
+                }
+                _ => return InputOutcome::Changed,
+            }
+        }
+
         // Settings: route through ModalWindow chrome, then delegate.
         if let ActiveModal::Settings { state } = modal {
             // Sub-mode short-circuit: FilterFocused, PickingEnum, PickingGroup,
@@ -473,6 +497,7 @@ impl AgentView {
             | ActiveModal::ShortcutsHelp { .. }
             | ActiveModal::MemoryBrowser { .. }
             | ActiveModal::Settings { .. }
+            | ActiveModal::ProviderLogin { .. }
             | ActiveModal::ResetSettingsConfirm { .. }
             | ActiveModal::RememberNoteReview { .. } => unreachable!(),
         }
@@ -1483,6 +1508,15 @@ impl AgentView {
             }
         }
 
+        if let Some(ActiveModal::ProviderLogin { state }) = &mut self.active_modal {
+            let outcome =
+                mw::handle_modal_mouse(&mut state.window, mouse.kind, mouse.column, mouse.row);
+            if matches!(outcome, ModalWindowOutcome::CloseRequested) {
+                self.active_modal = None;
+            }
+            return InputOutcome::Changed;
+        }
+
         // Settings: route through ModalWindow chrome, then delegate.
         if let Some(ActiveModal::Settings { state }) = &mut self.active_modal {
             let outcome =
@@ -2245,6 +2279,10 @@ impl AgentView {
                     settings_state,
                     compact,
                     None,
+                );
+            } else if let modal::ActiveModal::ProviderLogin { state } = active_modal {
+                crate::views::provider_login_modal::render_provider_login_modal(
+                    buf, area, state, compact,
                 );
             } else if matches!(
                 active_modal,

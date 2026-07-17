@@ -385,6 +385,9 @@ pub enum Action {
     SwitchModel {
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        /// An explicitly requested service-tier change. `Some(None)` returns
+        /// to Standard; `None` leaves the current session tier unchanged.
+        service_tier_change: Option<Option<String>>,
     },
     /// Cancel the currently running turn.
     CancelTurn,
@@ -603,6 +606,15 @@ pub enum Action {
     SwitchAccount,
     /// User pressed login on the welcome screen.
     Login,
+    /// Suspend the running TUI and launch the multi-provider setup interface.
+    /// `None` opens its picker; `Some(id)` jumps directly to that provider.
+    OpenProviderLogin {
+        provider: Option<String>,
+    },
+    /// Start browser-based subscription setup without suspending the TUI.
+    RunProviderLogin {
+        provider: String,
+    },
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit
@@ -1321,6 +1333,9 @@ pub enum ProbedAttachment {
 }
 #[derive(Debug)]
 pub enum Effect {
+    /// Authenticate a subscription provider in the system browser while the
+    /// current TUI and session remain alive.
+    ProviderOauthLogin { agent_id: AgentId, provider: String },
     /// Create a new ACP session.
     CreateSession {
         agent_id: AgentId,
@@ -1508,6 +1523,7 @@ pub enum Effect {
         session_id: acp::SessionId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        service_tier_change: Option<Option<String>>,
         /// The model that was active before the optimistic UI update
         /// in `set_default_model`. `None` for `Action::SwitchModel`
         /// (no optimistic update). Threaded through to
@@ -2051,6 +2067,12 @@ pub enum SubagentKillOutcome {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    /// Browser-based provider setup completed (or failed) while Atlas stayed open.
+    ProviderOauthLoginComplete {
+        agent_id: AgentId,
+        provider: String,
+        result: Result<(), String>,
+    },
     /// Session was created successfully.
     SessionCreated {
         agent_id: AgentId,
@@ -2267,6 +2289,7 @@ pub enum TaskResult {
         agent_id: AgentId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        service_tier_change: Option<Option<String>>,
         result: Result<(), SwitchModelError>,
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.
