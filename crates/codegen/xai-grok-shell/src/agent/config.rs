@@ -3283,7 +3283,15 @@ fn apply_vendor_reasoning_efforts(info: &mut ModelInfo) {
         return;
     }
     let model = info.model.to_ascii_lowercase();
-    if !(model.starts_with("gemini") || model.starts_with("claude")) {
+    // Provider gateways commonly namespace model ids, e.g.
+    // `openrouter/gemini-3.5-flash` or `anthropic/claude-sonnet-4-6`.
+    // Match the vendor portion after a namespace separator as well as a
+    // plain first-party id, without treating an arbitrary substring as a
+    // capability signal.
+    let is_vendor_reasoning_model = model
+        .split(['/', ':'])
+        .any(|part| part.starts_with("gemini") || part.starts_with("claude"));
+    if !is_vendor_reasoning_model {
         return;
     }
     info.reasoning_efforts = [
@@ -11249,6 +11257,10 @@ default = "grok-4.5"
             model = "gemini-3.5-flash"
             [model.claude]
             model = "claude-sonnet-4-6"
+            [model.namespaced-gemini]
+            model = "openrouter/gemini-3.5-flash"
+            [model.namespaced-claude]
+            model = "anthropic/claude-sonnet-4-6"
             [model.other]
             model = "other-model"
             "#,
@@ -11256,7 +11268,7 @@ default = "grok-4.5"
         .unwrap();
         let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
         let resolved = resolve_model_list(&cfg, None);
-        for id in ["gemini", "claude"] {
+        for id in ["gemini", "claude", "namespaced-gemini", "namespaced-claude"] {
             let info = &resolved[id].info;
             assert!(info.supports_reasoning_effort);
             assert_eq!(info.reasoning_effort, Some(ReasoningEffort::Medium));
