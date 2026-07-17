@@ -662,6 +662,9 @@ pub fn current_value_for(
                 ui.fork_secondary_model.clone()
             }
         })),
+        "task_model" => Some(SettingValue::String(
+            ui.task_model.clone().unwrap_or_default(),
+        )),
 
         _ => None,
     }
@@ -1088,6 +1091,16 @@ mod tests {
                         xai_grok_shell::models::default_model(),
                         "UiConfig::default().fork_secondary_model must equal \
                          models::default_model() — drift here breaks the empty-fold contract",
+                    );
+                }
+                ("task_model", SettingKind::DynamicEnum { default, .. }) => {
+                    assert_eq!(
+                        *default, "",
+                        "task_model registry default must be empty string — an absent UI override uses the resolved task-model default",
+                    );
+                    assert_eq!(
+                        ui.task_model, None,
+                        "UiConfig::default().task_model must be unset",
                     );
                 }
 

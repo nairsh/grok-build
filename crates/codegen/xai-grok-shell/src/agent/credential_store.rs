@@ -142,6 +142,47 @@ pub async fn ensure_fresh(
     Ok(true)
 }
 
+/// Refresh every expired OAuth credential in the store. One provider failure
+/// does not prevent the remaining credentials from being refreshed.
+pub async fn ensure_all_fresh(path: &Path, client: &reqwest::Client) -> anyhow::Result<usize> {
+    let store = Arc::new(RwLock::new(CredentialStore::load(path)?));
+    let ids = {
+        let guard = store
+            .read()
+            .map_err(|_| anyhow::anyhow!("credential store lock poisoned"))?;
+        guard
+            .entries
+            .iter()
+            .filter_map(|(id, credential)| {
+                matches!(credential, Credential::Oauth { .. }).then_some(id.clone())
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut refreshed = 0;
+    let mut failures = Vec::new();
+    for id in ids {
+        match ensure_fresh(&store, path, &id, client).await {
+            Ok(true) => refreshed += 1,
+            Ok(false) => {}
+            Err(error) => failures.push(format!("{id}: {error}")),
+        }
+    }
+    if failures.is_empty() {
+        Ok(refreshed)
+    } else {
+        anyhow::bail!(
+            "failed to refresh OAuth credentials: {}",
+            failures.join("; ")
+        )
+    }
+}
+
+pub async fn ensure_all_fresh_default() -> anyhow::Result<usize> {
+    let path = CredentialStore::default_path();
+    let client = reqwest::Client::new();
+    ensure_all_fresh(&path, &client).await
+}
+
 /// Run a subscription provider's OAuth login and persist the resulting tokens
 /// to the credential store under the provider's id. Returns the credential id
 /// that a `[connection.*]` should reference via `credential = { oauth = "<id>" }`.

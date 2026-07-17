@@ -416,6 +416,111 @@ fn resolve_hunk_tracker_mode(
         .find(|s| !s.is_empty())
         .map(str::to_owned)
 }
+
+fn has_connected_provider(
+    config: &xai_grok_shell::agent::config::Config,
+    has_session_auth: bool,
+    has_xai_api_key: bool,
+) -> bool {
+    if has_session_auth || has_xai_api_key || config.endpoints.deployment_key.is_some() {
+        return true;
+    }
+
+    let models = xai_grok_shell::agent::config::resolve_model_list(config, None);
+    if models.values().any(|model| model.has_own_credentials()) {
+        return true;
+    }
+
+    // A keyless local connection is usable without credential material, so it
+    // must still count as connected when a model actually references it.
+    let builtins = xai_grok_shell::agent::connection::builtin_connections();
+    config.config_models.values().any(|model| {
+        let Some(connection_id) = model.connection.as_deref() else {
+            return false;
+        };
+        xai_grok_shell::agent::connection::resolve_connection(
+            &config.connections,
+            connection_id,
+            &builtins,
+        )
+        .is_some_and(|connection| {
+            matches!(
+                connection.credential,
+                xai_grok_shell::agent::connection::CredentialRef::None
+            )
+        })
+    })
+}
+
+#[cfg(test)]
+mod provider_startup_tests {
+    use super::has_connected_provider;
+    use xai_grok_shell::agent::config::Config;
+
+    fn config(raw: &str) -> Config {
+        // Keep these tests independent of credentials in the developer's real
+        // ~/.grok store by shadowing the built-in subscription connection.
+        let raw = format!(
+            r#"
+            [connection.openai-codex]
+            credential = "xai"
+
+            {raw}
+            "#
+        );
+        Config::new_from_toml_cfg(&toml::from_str(&raw).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn empty_config_has_no_connected_provider() {
+        let no_provider = config("");
+        assert!(!has_connected_provider(&no_provider, false, false));
+        assert!(has_connected_provider(&config(""), true, false));
+        assert!(has_connected_provider(&config(""), false, true));
+    }
+
+    #[test]
+    fn configured_model_with_credential_is_connected() {
+        let cfg = config(
+            r#"
+            [connection.test]
+            base_url = "http://localhost:1234/v1"
+            credential = { api_key = "test-key" }
+
+            [model.test]
+            connection = "test"
+            model = "test-model"
+            "#,
+        );
+        assert!(has_connected_provider(&cfg, false, false));
+    }
+
+    #[test]
+    fn unreferenced_connection_is_not_connected_but_keyless_model_is() {
+        let unreferenced = config(
+            r#"
+            [connection.local]
+            base_url = "http://localhost:1234/v1"
+            credential = "none"
+            "#,
+        );
+        assert!(!has_connected_provider(&unreferenced, false, false));
+
+        let referenced = config(
+            r#"
+            [connection.local]
+            base_url = "http://localhost:1234/v1"
+            credential = "none"
+
+            [model.local]
+            connection = "local"
+            model = "local-model"
+            "#,
+        );
+        assert!(has_connected_provider(&referenced, false, false));
+    }
+}
+
 /// Main entry point: connect to agent, init terminal, run event loop, restore.
 ///
 /// If a session ID is provided via `--resume` / `--load` / `--continue`, the
@@ -436,17 +541,34 @@ pub async fn run(
     let startup_start = std::time::Instant::now();
     let raw_config = xai_grok_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-    let grok_com_config =
-        match xai_grok_shell::agent::config::Config::new_from_toml_cfg(&raw_config) {
-            Ok(c) => c.grok_com_config,
-            Err(e) => {
-                tracing::warn!(
-                    error = % e, "failed to parse config for auth refresh, using defaults"
-                );
-                xai_grok_shell::auth::GrokComConfig::default()
-            }
-        };
+    let startup_config = match xai_grok_shell::agent::config::Config::new_from_toml_cfg(&raw_config)
+    {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!(
+                error = % e, "failed to parse config for auth refresh, using defaults"
+            );
+            None
+        }
+    };
+    let grok_com_config = startup_config
+        .as_ref()
+        .map(|config| config.grok_com_config.clone())
+        .unwrap_or_default();
+    xai_grok_shell::agent::provider_catalog::prepare_connected_providers().await;
     let refreshed_auth = xai_grok_shell::auth::try_ensure_fresh_auth(&grok_com_config).await;
+    if let Some(config) = startup_config.as_ref()
+        && !has_connected_provider(
+            config,
+            refreshed_auth.is_some(),
+            xai_grok_shell::agent::auth_method::has_xai_api_key_env(),
+        )
+    {
+        anyhow::bail!(
+            "No provider is connected.\n\
+             Run `atlas login` to connect a provider before starting Atlas."
+        );
+    }
     let early_prefetch =
         xai_grok_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
     xai_grok_shell::agent::mvp_agent::warm_async_http_client();

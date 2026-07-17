@@ -39,6 +39,40 @@ const DEFAULT_CLIENT_IDENTIFIER: &str = "grok-shell";
 /// Product identifier baked into User-Agent strings.
 const AGENT_PRODUCT: &str = "grok-shell";
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u32 = 128_000;
+const CHATGPT_CODEX_HOST: &str = "chatgpt.com";
+const CHATGPT_CODEX_PATH: &str = "/backend-api/codex";
+const CODEX_INSTALLATION_ID_HEADER: &str = "x-codex-installation-id";
+const CODEX_WINDOW_ID_HEADER: &str = "x-codex-window-id";
+
+fn is_chatgpt_codex_endpoint(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url).is_ok_and(|url| {
+        url.host_str() == Some(CHATGPT_CODEX_HOST)
+            && url.path().trim_end_matches('/') == CHATGPT_CODEX_PATH
+    })
+}
+
+/// Remove output-only response item IDs that upstream serialization has
+/// represented as `""`. The Responses API requires those IDs to be omitted
+/// on input; an empty value is invalid. Walk recursively because input items
+/// may be wrapped differently by async-openai versions.
+fn strip_empty_response_item_ids(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                strip_empty_response_item_ids(value);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            if object.get("id").and_then(serde_json::Value::as_str) == Some("") {
+                object.remove("id");
+            }
+            for value in object.values_mut() {
+                strip_empty_response_item_ids(value);
+            }
+        }
+        _ => {}
+    }
+}
 
 /// Per-request `x-grok-*` headers. Optional fields are skipped when empty/`None`.
 struct GrokRequestHeaders<'a> {
@@ -119,7 +153,12 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
             }
             tracing::error!(
                 error = %first_err,
-                raw_data = %data,
+                event_type = serde_json::from_str::<serde_json::Value>(data)
+                    .ok()
+                    .and_then(|value| value.get("type").and_then(|kind| kind.as_str()).map(str::to_owned))
+                    .as_deref()
+                    .unwrap_or("unknown"),
+                payload_bytes = data.len(),
                 "Failed to deserialize ResponseStreamEvent from stream"
             );
             return Err(SamplingError::Serialization(first_err));
@@ -127,6 +166,33 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
     };
     apply_terminal_event_overrides(&mut event, data);
     Ok(event)
+}
+
+/// Returns `true` for known non-content stream frames which are not yet
+/// represented by async-openai's `ResponseStreamEvent` enum. These frames do
+/// not change the conversation; the terminal response remains authoritative.
+///
+/// ChatGPT Codex currently emits `response.metadata` while a turn is running.
+/// Treating it as a fatal deserialization failure aborts an otherwise healthy
+/// stream, so swallow it until the upstream enum adds a typed variant.
+fn is_ignorable_response_event(data: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(data).is_ok_and(|value| {
+        value.get("type").and_then(|kind| kind.as_str()) == Some("response.metadata")
+    })
+}
+
+/// Return only an SSE payload's type discriminator for diagnostics. Never log
+/// the full frame: it can contain model output, tool arguments, or credentials.
+fn sse_event_type(data: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(data)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("type")
+                .or_else(|| value.get("object"))
+                .and_then(|kind| kind.as_str().map(str::to_owned))
+        })
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// On terminal Responses API events (`response.completed` /
@@ -401,12 +467,30 @@ impl SamplingClient {
     pub fn new(config: SamplerConfig) -> Result<Self> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        if is_chatgpt_codex_endpoint(&config.base_url) {
+            for (name, value) in [
+                (
+                    CODEX_INSTALLATION_ID_HEADER,
+                    uuid::Uuid::new_v4().to_string(),
+                ),
+                (CODEX_WINDOW_ID_HEADER, uuid::Uuid::new_v4().to_string()),
+            ] {
+                let header_value = HeaderValue::from_str(&value).map_err(|_| {
+                    SamplingError::InvalidConfiguration("Invalid generated Codex session header")
+                })?;
+                headers.insert(
+                    HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+                        SamplingError::InvalidConfiguration("Invalid Codex session header name")
+                    })?,
+                    header_value,
+                );
+            }
+        }
         if let Some(ref api_key) = config.api_key {
             match config.auth_scheme {
                 AuthScheme::XApiKey => {
                     let header_value = HeaderValue::from_str(api_key).map_err(|_| {
                         tracing::debug!(
-                            api_key = %api_key,
                             "Invalid api_key: cannot be converted to a valid HTTP header"
                         );
                         SamplingError::Auth(
@@ -420,7 +504,6 @@ impl SamplingClient {
                     let bearer = format!("Bearer {}", api_key);
                     let header_value = HeaderValue::from_str(&bearer).map_err(|_| {
                         tracing::debug!(
-                            api_key = %api_key,
                             "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
                         );
                         SamplingError::Auth(
@@ -568,14 +651,6 @@ impl SamplingClient {
             }
         }
         {
-            let auth_prefix = headers
-                .get(AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(20).collect::<String>());
-            let x_api_key_prefix = headers
-                .get(HeaderName::from_static("x-api-key"))
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(12).collect::<String>());
             tracing::info!(
                 target: crate::sampling_log::TARGET,
                 event = "client_post",
@@ -586,8 +661,6 @@ impl SamplingClient {
                 has_bearer_resolver = self.bearer_resolver.is_some(),
                 has_authorization_header = headers.get(AUTHORIZATION).is_some(),
                 has_x_api_key_header = headers.get(HeaderName::from_static("x-api-key")).is_some(),
-                auth_header_prefix = auth_prefix.as_deref().unwrap_or("none"),
-                x_api_key_prefix = x_api_key_prefix.as_deref().unwrap_or("none"),
             );
         }
         if let Some(injector) = &self.header_injector {
@@ -656,16 +729,13 @@ impl SamplingClient {
     }
 
     pub fn auth_info(&self) -> crate::sampling_log::AuthInfo {
-        let auth_prefix = self.current_sent_bearer_prefix();
-        let auth_type = match (&self.defaults.auth_scheme, &auth_prefix) {
-            (AuthScheme::XApiKey, Some(_)) => "x-api-key",
-            (AuthScheme::Bearer, Some(_)) => "bearer",
-            (_, None) => "none",
+        let has_credentials = self.current_sent_bearer_prefix().is_some();
+        let auth_type = match (&self.defaults.auth_scheme, has_credentials) {
+            (AuthScheme::XApiKey, true) => "x-api-key",
+            (AuthScheme::Bearer, true) => "bearer",
+            (_, false) => "none",
         };
-        crate::sampling_log::AuthInfo {
-            auth_type,
-            auth_prefix,
-        }
+        crate::sampling_log::AuthInfo { auth_type }
     }
 
     /// Check if a header name contains sensitive information that should be redacted.
@@ -773,6 +843,101 @@ impl SamplingClient {
         let base = self.base_url.trim_end_matches('/');
         let path = path.trim_start_matches('/');
         format!("{base}/{path}")
+    }
+
+    /// ChatGPT's Codex endpoint accepts developer guidance in the top-level
+    /// `instructions` field, but rejects `system` messages in the Responses
+    /// `input` array. Keep the standard shape for every other endpoint.
+    fn responses_request(&self, request: &ConversationRequest) -> rs::CreateResponse {
+        if !is_chatgpt_codex_endpoint(&self.base_url) {
+            return request.into();
+        }
+
+        let mut request = request.clone();
+        let instructions = request
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                xai_grok_sampling_types::ConversationItem::System(system) => {
+                    Some(system.content.as_ref())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        request
+            .items
+            .retain(|item| !matches!(item, xai_grok_sampling_types::ConversationItem::System(_)));
+
+        // The ChatGPT Codex endpoint requires an explicit tool policy for the
+        // agent loop. The regular Responses API defaults an omitted policy to
+        // `auto`, but Codex can otherwise finish after a reasoning summary
+        // without dispatching any of the supplied function tools.
+        if !request.tools.is_empty() && request.tool_choice.is_none() {
+            request.tool_choice = Some(xai_grok_sampling_types::ConversationToolChoice::Auto);
+        }
+
+        let mut response: rs::CreateResponse = (&request).into();
+        if !instructions.is_empty() {
+            response.instructions = Some(instructions);
+        }
+        if response.tools.is_some() {
+            response.parallel_tool_calls = Some(true);
+        }
+        response
+    }
+
+    /// Adds the request fields used by Codex's ChatGPT-backed Responses route.
+    /// The endpoint is not the public Responses API: it relies on the stable
+    /// client/session metadata below to keep an agent turn on the tool-enabled
+    /// Codex path. All IDs are local opaque UUIDs and contain no account data.
+    fn apply_chatgpt_codex_request_metadata(
+        &self,
+        request: &CreateResponseWrapper,
+        body: &mut serde_json::Value,
+    ) {
+        if !is_chatgpt_codex_endpoint(&self.base_url) {
+            return;
+        }
+
+        // `async-openai` may serialize output-only item IDs as an empty
+        // string when an assistant function call is replayed after executing
+        // a local tool. The Codex route rejects that shape instead of
+        // treating it as absent. Preserve the call ID (which links the tool
+        // result to the call), but omit only empty item IDs.
+        strip_empty_response_item_ids(body);
+
+        let installation_id = self
+            .default_headers
+            .get(CODEX_INSTALLATION_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        let window_id = self
+            .default_headers
+            .get(CODEX_WINDOW_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        let session_id = request
+            .x_grok_session_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .unwrap_or(installation_id);
+        let thread_id = request
+            .x_grok_conv_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .unwrap_or(session_id);
+
+        body["parallel_tool_calls"] = serde_json::json!(true);
+        body["store"] = serde_json::json!(false);
+        body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
+        body["prompt_cache_key"] = serde_json::json!(session_id);
+        body["client_metadata"] = serde_json::json!({
+            CODEX_INSTALLATION_ID_HEADER: installation_id,
+            "session_id": session_id,
+            "thread_id": thread_id,
+            CODEX_WINDOW_ID_HEADER: window_id,
+        });
     }
 
     fn apply_defaults(&self, mut request: ChatCompletionRequest) -> Result<ChatCompletionRequest> {
@@ -1031,7 +1196,8 @@ impl SamplingClient {
                             target: crate::sampling_log::TARGET,
                             event = "sse_chunk",
                             backend = "chat_completions",
-                            data = %data,
+                            event_type = sse_event_type(data),
+                            payload_bytes = data.len(),
                         );
 
                         if let Some(stream_error) = try_parse_stream_error(data) {
@@ -1041,7 +1207,8 @@ impl SamplingClient {
                                 serde_json::from_str::<ChatCompletionChunk>(data).map_err(|e| {
                                     tracing::error!(
                                         error = %e,
-                                        raw_data = %data,
+                                        event_type = sse_event_type(data),
+                                        payload_bytes = data.len(),
                                         "Failed to deserialize ChatCompletionChunk from stream"
                                     );
                                     SamplingError::Serialization(e)
@@ -1273,6 +1440,7 @@ impl SamplingClient {
             tracing::error!("Failed to serialize responses request: {}", e);
             SamplingError::Serialization(e)
         })?;
+        self.apply_chatgpt_codex_request_metadata(&request, &mut request_body);
         // Inject xAI-specific fields not in async-openai's CreateResponse type.
         if self.defaults.stream_tool_calls {
             request_body["stream_tool_calls"] = serde_json::json!(true);
@@ -1408,7 +1576,8 @@ impl SamplingClient {
                             target: crate::sampling_log::TARGET,
                             event = "sse_chunk",
                             backend = "responses",
-                            data = %data,
+                            event_type = sse_event_type(data),
+                            payload_bytes = data.len(),
                         );
 
                         // Intercept the non-standard doom-loop event before
@@ -1422,6 +1591,13 @@ impl SamplingClient {
                             None => is_check_event(&event.event, data),
                         };
                         if swallow {
+                            Some(None)
+                        } else if is_ignorable_response_event(data) {
+                            tracing::debug!(
+                                target: crate::sampling_log::TARGET,
+                                event = "response.metadata",
+                                "ignoring unsupported non-content Responses stream event"
+                            );
                             Some(None)
                         } else if let Some(stream_error) = try_parse_stream_error(data) {
                             Some(Some(Err(stream_error)))
@@ -1725,7 +1901,8 @@ impl SamplingClient {
                             target: crate::sampling_log::TARGET,
                             event = "sse_chunk",
                             backend = "messages",
-                            data = %data,
+                            event_type = sse_event_type(data),
+                            payload_bytes = data.len(),
                         );
 
                         if let Some(stream_error) = try_parse_stream_error(data) {
@@ -1736,7 +1913,8 @@ impl SamplingClient {
                                     |e| {
                                         tracing::error!(
                                             error = %e,
-                                            raw_data = %data,
+                                            event_type = sse_event_type(data),
+                                            payload_bytes = data.len(),
                                             "Failed to deserialize MessageStreamEvent from stream"
                                         );
                                         SamplingError::Serialization(e)
@@ -1850,7 +2028,7 @@ impl SamplingClient {
         // (e.g., x_search). These are injected as raw JSON after serialization.
         let extra_tools = xai_grok_sampling_types::extra_raw_tools(&request.hosted_tools);
 
-        let responses_request: rs::CreateResponse = (&request).into();
+        let responses_request = self.responses_request(&request);
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;
@@ -1883,7 +2061,7 @@ impl SamplingClient {
         let x_grok_turn_idx = request.x_grok_turn_idx.clone();
         let x_grok_agent_id = request.x_grok_agent_id.clone();
 
-        let responses_request: rs::CreateResponse = (&request).into();
+        let responses_request = self.responses_request(&request);
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;
@@ -2043,6 +2221,149 @@ mod tests {
             doom_loop_recovery: None,
             header_injector: None,
         }
+    }
+
+    #[test]
+    fn chatgpt_codex_moves_system_messages_to_instructions() {
+        let client = SamplingClient::new(SamplerConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_owned(),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        })
+        .unwrap();
+        let mut request = ConversationRequest::default();
+        request
+            .items
+            .push(xai_grok_sampling_types::ConversationItem::system(
+                "First instruction",
+            ));
+        request
+            .items
+            .push(xai_grok_sampling_types::ConversationItem::system(
+                "Second instruction",
+            ));
+        request
+            .items
+            .push(xai_grok_sampling_types::ConversationItem::user("Hello"));
+
+        let response = client.responses_request(&request);
+        assert_eq!(
+            response.instructions.as_deref(),
+            Some("First instruction\n\nSecond instruction")
+        );
+        let body = serde_json::to_value(response).unwrap();
+        assert!(
+            body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["role"] != "system")
+        );
+    }
+
+    #[test]
+    fn chatgpt_codex_explicitly_enables_available_tools() {
+        let client = SamplingClient::new(SamplerConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_owned(),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        })
+        .unwrap();
+        let mut request = ConversationRequest::default();
+        request
+            .items
+            .push(xai_grok_sampling_types::ConversationItem::user(
+                "Inspect this folder.",
+            ));
+        request.tools.push(xai_grok_sampling_types::ToolSpec {
+            name: "list_directory".to_owned(),
+            description: Some("List a directory's entries.".to_owned()),
+            parameters: serde_json::json!({"type": "object"}),
+        });
+
+        let response = client.responses_request(&request);
+        assert!(matches!(
+            response.tool_choice,
+            Some(rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto))
+        ));
+        assert_eq!(response.parallel_tool_calls, Some(true));
+    }
+
+    #[test]
+    fn chatgpt_codex_adds_session_metadata_without_account_data() {
+        let client = SamplingClient::new(SamplerConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_owned(),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        })
+        .unwrap();
+        let mut request = CreateResponseWrapper::new(rs::CreateResponse::default());
+        request.x_grok_session_id = Some("session-123".to_owned());
+        request.x_grok_conv_id = Some("thread-456".to_owned());
+        let mut body = serde_json::json!({});
+
+        client.apply_chatgpt_codex_request_metadata(&request, &mut body);
+
+        assert_eq!(body["parallel_tool_calls"], true);
+        assert_eq!(body["store"], false);
+        assert_eq!(
+            body["include"],
+            serde_json::json!(["reasoning.encrypted_content"])
+        );
+        assert_eq!(body["prompt_cache_key"], "session-123");
+        assert_eq!(body["client_metadata"]["session_id"], "session-123");
+        assert_eq!(body["client_metadata"]["thread_id"], "thread-456");
+        assert!(
+            body["client_metadata"][CODEX_INSTALLATION_ID_HEADER]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+        );
+        assert!(body["client_metadata"].get("account_id").is_none());
+    }
+
+    #[test]
+    fn chatgpt_codex_omits_empty_replayed_item_ids() {
+        let client = SamplingClient::new(SamplerConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_owned(),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        })
+        .unwrap();
+        let request = CreateResponseWrapper::new(rs::CreateResponse::default());
+        let mut body = serde_json::json!({
+            "input": [{
+                "type": "function_call",
+                "id": "",
+                "call_id": "call_abc123",
+                "name": "list_directory",
+                "arguments": "{}"
+            }]
+        });
+
+        client.apply_chatgpt_codex_request_metadata(&request, &mut body);
+
+        let tool_call = &body["input"][0];
+        assert!(tool_call.get("id").is_none());
+        assert_eq!(tool_call["call_id"], "call_abc123");
+    }
+
+    #[test]
+    fn strip_empty_response_item_ids_preserves_real_ids() {
+        let mut body = serde_json::json!({
+            "input": [{
+                "id": "",
+                "call_id": "call_abc123",
+                "nested": {"id": ""}
+            }],
+            "response_id": "resp_123"
+        });
+
+        strip_empty_response_item_ids(&mut body);
+
+        assert!(body["input"][0].get("id").is_none());
+        assert!(body["input"][0]["nested"].get("id").is_none());
+        assert_eq!(body["input"][0]["call_id"], "call_abc123");
+        assert_eq!(body["response_id"], "resp_123");
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the
@@ -2741,5 +3062,16 @@ mod tests {
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
         ));
+    }
+
+    #[test]
+    fn response_metadata_is_ignored_without_hiding_real_events() {
+        assert!(is_ignorable_response_event(
+            r#"{"type":"response.metadata","sequence_number":27,"metadata":{"foo":"bar"}}"#
+        ));
+        assert!(!is_ignorable_response_event(
+            r#"{"type":"response.output_text.delta","delta":"hello"}"#
+        ));
+        assert!(!is_ignorable_response_event("not json"));
     }
 }

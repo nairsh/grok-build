@@ -1,8 +1,8 @@
 # Providers and Connections
 
-Grok is multi-provider. Beyond the built-in SpaceXAI models you can point models
-at OpenAI, Anthropic, OpenRouter, any OpenAI/Anthropic-compatible endpoint, and —
-via subscription login — Claude Pro/Max, ChatGPT (Codex), and GitHub Copilot.
+Atlas is multi-provider. Beyond the built-in xAI models you can point models at
+OpenAI, Anthropic, OpenRouter, and OpenAI/Anthropic-compatible endpoints. Claude
+Pro/Max and ChatGPT (Codex) subscription login are also supported.
 
 The model layer separates four independent ideas so **a provider is not an
 account**:
@@ -21,11 +21,21 @@ anything.
 
 ---
 
-## Quick start: use an API-key provider
+## Quick start
 
-Grok ships **built-in connections** for common providers, keyed off the
-conventional environment variable. Just export the key and reference the
-connection from a model:
+Run:
+
+```bash
+atlas login
+```
+
+Choose a subscription or **Add an API key**. For API keys, Atlas asks for the
+provider and model id, stores the secret in `~/.grok/credentials.json`, and adds
+a complete connection plus model entry to `~/.grok/config.toml`. The connection
+is usable on the next `atlas` launch; no hand-editing is required.
+
+Atlas also ships built-in connections keyed off conventional environment
+variables. This remains useful for scripted or ephemeral setups:
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -107,28 +117,24 @@ for itself.
 
 ## Subscription login (Claude Pro/Max, ChatGPT, Copilot)
 
-Grok can authenticate against provider **subscriptions** using OAuth, storing the
-tokens in `~/.grok/credentials.json` (0600) and refreshing them automatically.
+Atlas can authenticate against provider **subscriptions** using OAuth, storing
+the tokens in `~/.grok/credentials.json` (0600) and refreshing expired tokens at
+startup.
 
 | Subscription | Credential id | Flow |
 |--------------|---------------|------|
 | Claude Pro/Max | `anthropic` | Browser (PKCE loopback) |
 | ChatGPT (Codex) | `openai-codex` | Browser (PKCE loopback) |
-| GitHub Copilot | `github-copilot` | Device code |
+| GitHub Copilot | `github-copilot` | Not yet implemented |
 
-Once logged in, reference the stored subscription from a connection:
+Successful subscription login is immediately usable. Atlas creates built-in
+subscription connections automatically:
 
-```toml
-[connection.claude-sub]
-adapter = "messages"
-base_url = "https://api.anthropic.com/v1"
-credential = { oauth = "anthropic" }
-
-[model.claude-sub]
-connection = "claude-sub"
-model = "claude-sonnet-4-8"
-context_window = 200000
-```
+- ChatGPT models are fetched from the account-aware Codex model endpoint. Atlas
+  declares a tested Codex catalog compatibility level, ignores hidden/internal
+  models, and keeps the last successful non-empty catalog for offline startup.
+  A bundled model remains available if discovery has never succeeded.
+- Claude Pro/Max currently uses a bundled subscription model definition.
 
 > **Note:** subscription OAuth flows are ported from the open-source Pi Agent
 > Harness. Third-party subscription usage is billed by the provider per their
@@ -141,7 +147,6 @@ context_window = 200000
 
 At model load, `resolve_model_list` seeds a connection-referencing model with the
 connection's endpoint/adapter/credential as the base, then applies the model's
-own fields on top. API-key and env credentials become the model's inline key;
-`oauth`/`named` credentials resolve to a live bearer from the credential store at
-request time. The xAI default path is unchanged — existing configs keep working
-with no migration.
+own fields on top. API-key, environment, OAuth, and named credentials become the
+model's effective request credential. The xAI default path is unchanged, so
+existing configs keep working with no migration.

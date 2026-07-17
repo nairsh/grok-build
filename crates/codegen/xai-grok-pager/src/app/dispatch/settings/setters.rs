@@ -1825,6 +1825,46 @@ pub(in crate::app::dispatch) fn clear_fork_secondary_model(app: &mut AppView) ->
     }]
 }
 
+/// Persist the model used for automatic task names and session recaps.
+pub(in crate::app::dispatch) fn set_task_model(app: &mut AppView, id: acp::ModelId) -> Vec<Effect> {
+    let ActiveView::Agent(aid) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get(&aid) else {
+        return vec![];
+    };
+    if !agent.session.models.available.contains_key(&id) {
+        return vec![];
+    }
+    let value = id.0.to_string();
+    if app.current_ui.task_model.as_deref() == Some(value.as_str()) {
+        return vec![];
+    }
+    let previous = app.current_ui.task_model.clone().unwrap_or_default();
+    let display = agent.session.models.display_name_for(&id);
+    app.current_ui.task_model = Some(value.clone());
+    refresh_open_settings_modals(app);
+    app.show_toast(&format!("✓ Task model: {display}"));
+    vec![Effect::PersistSetting {
+        key: "task_model",
+        value: crate::settings::SettingValue::String(value),
+        rollback_value: crate::settings::SettingValue::String(previous),
+    }]
+}
+
+pub(in crate::app::dispatch) fn clear_task_model(app: &mut AppView) -> Vec<Effect> {
+    let Some(previous) = app.current_ui.task_model.take() else {
+        return vec![];
+    };
+    refresh_open_settings_modals(app);
+    app.show_toast("✓ Task model: cleared");
+    vec![Effect::PersistSetting {
+        key: "task_model",
+        value: crate::settings::SettingValue::String(String::new()),
+        rollback_value: crate::settings::SettingValue::String(previous),
+    }]
+}
+
 // `web_search_model`, `session_summary_model`, and
 // `default_reasoning_effort` setters were removed alongside their
 // registry entries. Mirror fields and TOML schema stay for compat.

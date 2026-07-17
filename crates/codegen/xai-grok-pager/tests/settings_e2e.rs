@@ -56,6 +56,7 @@ const ALL_SETTINGS_EXERCISED: &[&str] = &[
     "show_tips",
     "auto_update",
     "fork_secondary_model",
+    "task_model",
     "show_thinking_blocks",
     "prompt_suggestions",
     "group_tool_verbs",
@@ -1642,7 +1643,7 @@ fn registry_kind_membership_through_pr_14() {
     let dynamic_enum_keys = by_kind.remove("DynamicEnum").unwrap_or_default();
     assert_eq!(
         dynamic_enum_keys,
-        vec!["default_model", "fork_secondary_model",],
+        vec!["default_model", "fork_secondary_model", "task_model",],
         "DynamicEnum kind membership drift",
     );
 
@@ -6242,7 +6243,7 @@ fn pr14_restart_required_split() {
 fn pr14_string_settings_use_known_model_validator() {
     use xai_grok_pager::settings::DynamicEnumSource;
     let reg = SettingsRegistry::defaults();
-    for key in ["default_model", "fork_secondary_model"] {
+    for key in ["default_model", "fork_secondary_model", "task_model"] {
         let meta = reg
             .find(key)
             .unwrap_or_else(|| panic!("`{key}` must be registered"));

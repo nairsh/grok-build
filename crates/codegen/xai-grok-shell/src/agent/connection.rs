@@ -138,6 +138,17 @@ impl ConnectionConfig {
     /// to stored credentials resolved later by the credential store (they set no
     /// static key here).
     pub fn apply_as_base(&self, entry: &mut ModelEntry) {
+        let path = crate::agent::credential_store::CredentialStore::default_path();
+        let store =
+            crate::agent::credential_store::CredentialStore::load(&path).unwrap_or_default();
+        self.apply_as_base_with_store(entry, &store);
+    }
+
+    pub(crate) fn apply_as_base_with_store(
+        &self,
+        entry: &mut ModelEntry,
+        store: &crate::agent::credential_store::CredentialStore,
+    ) {
         if let Some(base_url) = &self.base_url {
             entry.info.base_url = base_url.clone();
         }
@@ -170,20 +181,22 @@ impl ConnectionConfig {
             // credential leaves the key unset — the model is simply unavailable,
             // exactly like an unset `env_key`.
             CredentialRef::Named(id) | CredentialRef::Oauth(id) => {
-                entry.api_key = load_stored_bearer(id);
+                entry.api_key = store.current_bearer(id);
+                if let Some(crate::agent::credential_store::Credential::Oauth {
+                    provider: crate::agent::oauth_providers::SubscriptionProvider::OpenAiCodex,
+                    tokens,
+                }) = store.get(id)
+                    && let Some(account_id) =
+                        crate::agent::oauth_providers::openai_chatgpt_account_id(&tokens.access)
+                {
+                    entry
+                        .info
+                        .extra_headers
+                        .insert("ChatGPT-Account-ID".to_owned(), account_id);
+                }
             }
         }
     }
-}
-
-/// Read the current bearer for a stored credential id from the on-disk
-/// credential store. Returns `None` (model unavailable) when the store or the
-/// credential is absent, mirroring an unresolved `env_key`.
-fn load_stored_bearer(id: &str) -> Option<String> {
-    let path = crate::agent::credential_store::CredentialStore::default_path();
-    crate::agent::credential_store::CredentialStore::load(&path)
-        .ok()?
-        .current_bearer(id)
 }
 
 /// Built-in connections shipped with the CLI so common providers can be used
@@ -205,6 +218,26 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
         },
     );
     m.insert(
+        "openai-codex".to_owned(),
+        ConnectionConfig {
+            adapter: Some(ApiBackend::Responses),
+            base_url: Some("https://chatgpt.com/backend-api/codex".to_owned()),
+            extra_headers: [
+                // ChatGPT's Codex endpoint uses this to select the Codex
+                // client behavior, including its tool-enabled agent flow.
+                ("originator".to_owned(), "codex_cli_rs".to_owned()),
+                (
+                    "OpenAI-Beta".to_owned(),
+                    "responses=experimental".to_owned(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            credential: CredentialRef::Oauth("openai-codex".to_owned()),
+            ..Default::default()
+        },
+    );
+    m.insert(
         "anthropic".to_owned(),
         ConnectionConfig {
             adapter: Some(ApiBackend::Messages),
@@ -216,6 +249,30 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
                 .into_iter()
                 .collect(),
             credential: CredentialRef::Env(EnvKeys::single("ANTHROPIC_API_KEY")),
+            ..Default::default()
+        },
+    );
+    m.insert(
+        "anthropic-subscription".to_owned(),
+        ConnectionConfig {
+            adapter: Some(ApiBackend::Messages),
+            base_url: Some("https://api.anthropic.com/v1".to_owned()),
+            auth_scheme: Some(AuthScheme::Bearer),
+            extra_headers: [
+                ("anthropic-version".to_owned(), "2023-06-01".to_owned()),
+                (
+                    "anthropic-beta".to_owned(),
+                    "claude-code-20250219,oauth-2025-04-20".to_owned(),
+                ),
+                (
+                    "anthropic-dangerous-direct-browser-access".to_owned(),
+                    "true".to_owned(),
+                ),
+                ("x-app".to_owned(), "cli".to_owned()),
+            ]
+            .into_iter()
+            .collect(),
+            credential: CredentialRef::Oauth("anthropic".to_owned()),
             ..Default::default()
         },
     );
@@ -415,6 +472,16 @@ mod tests {
         assert_eq!(oauth, CredentialRef::Oauth("anthropic".to_owned()));
         assert!(oauth.is_oauth());
         assert_eq!(oauth.stored_id(), Some("anthropic"));
+    }
+
+    #[test]
+    fn chatgpt_codex_connection_uses_the_codex_originator() {
+        let connections = builtin_connections();
+        let codex = connections.get("openai-codex").unwrap();
+        assert_eq!(
+            codex.extra_headers.get("originator").map(String::as_str),
+            Some("codex_cli_rs")
+        );
     }
 
     #[derive(Deserialize)]

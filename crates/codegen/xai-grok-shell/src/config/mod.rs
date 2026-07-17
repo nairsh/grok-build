@@ -610,11 +610,19 @@ impl ModelOverrideConfig {
         let parsed_models: crate::agent::config::ModelsConfig = models_table
             .and_then(|v| v.clone().try_into().ok())
             .unwrap_or_default();
+        let parsed_ui: crate::agent::config::UiConfig = config
+            .get("ui")
+            .and_then(|v| v.clone().try_into().ok())
+            .unwrap_or_default();
         let mut result = Self {
             web_search: parsed_models
                 .web_search
                 .unwrap_or_else(|| crate::models::default_web_search_model().to_owned()),
-            session_summary: non_empty_model_override(parsed_models.session_summary.as_deref()),
+            // `ui.task_model` is the interactive Settings surface for this
+            // existing task-summary override. Keep `[models].session_summary`
+            // as the explicit/config-file compatibility override.
+            session_summary: non_empty_model_override(parsed_models.session_summary.as_deref())
+                .or_else(|| non_empty_model_override(parsed_ui.task_model.as_deref())),
             image_description: non_empty_model_override(parsed_models.image_description.as_deref()),
             prompt_suggestion: non_empty_model_override(parsed_models.prompt_suggestion.as_deref())
                 .map(PromptSuggestModelPin::Pinned)
@@ -623,7 +631,8 @@ impl ModelOverrideConfig {
         let has_local_ws = models_table.and_then(|m| m.get("web_search")).is_some();
         let has_local_ss = models_table
             .and_then(|m| m.get("session_summary"))
-            .is_some();
+            .is_some()
+            || config.get("ui").and_then(|u| u.get("task_model")).is_some();
         let has_local_id = models_table
             .and_then(|m| m.get("image_description"))
             .is_some();

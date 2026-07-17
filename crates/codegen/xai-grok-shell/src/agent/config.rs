@@ -3181,6 +3181,7 @@ pub fn resolve_model_list(
         }
         resolved = prefetched;
     }
+    add_builtin_subscription_models(cfg, &mut resolved);
     for (key, model_override) in &cfg.config_models {
         let had_base = resolved.contains_key(key);
         let mut base = resolved.shift_remove(key);
@@ -3269,6 +3270,77 @@ pub fn resolve_model_list(
         entry.info.derive_reasoning_effort_fields();
     }
     resolved
+}
+
+fn add_builtin_subscription_models(cfg: &Config, resolved: &mut IndexMap<String, ModelEntry>) {
+    let path = crate::agent::credential_store::CredentialStore::default_path();
+    let Ok(store) = crate::agent::credential_store::CredentialStore::load(&path) else {
+        return;
+    };
+    add_builtin_subscription_models_with_store(cfg, resolved, &store);
+}
+
+fn add_builtin_subscription_models_with_store(
+    cfg: &Config,
+    resolved: &mut IndexMap<String, ModelEntry>,
+    store: &crate::agent::credential_store::CredentialStore,
+) {
+    if crate::agent::provider_catalog::add_cached_openai_codex_models(cfg, resolved, store) == 0 {
+        add_builtin_openai_subscription_model(cfg, resolved, store);
+    }
+    add_builtin_anthropic_subscription_model(cfg, resolved, store);
+}
+
+fn add_builtin_openai_subscription_model(
+    cfg: &Config,
+    resolved: &mut IndexMap<String, ModelEntry>,
+    store: &crate::agent::credential_store::CredentialStore,
+) {
+    const MODEL_ID: &str = "gpt-5.4";
+    const CATALOG_ID: &str = "openai-codex/gpt-5.4";
+
+    let builtins = crate::agent::connection::builtin_connections();
+    let Some(connection) =
+        crate::agent::connection::resolve_connection(&cfg.connections, "openai-codex", &builtins)
+    else {
+        return;
+    };
+
+    let mut entry = ModelEntry::fallback(MODEL_ID, &cfg.endpoints);
+    connection.apply_as_base_with_store(&mut entry, store);
+    if !entry.has_own_credentials() {
+        return;
+    }
+    entry.info.name = Some("GPT-5.4 (ChatGPT)".to_owned());
+    entry.info.description = Some("OpenAI Codex through your ChatGPT subscription".to_owned());
+    entry.info.context_window = NonZeroU64::new(272_000).expect("272000 is non-zero");
+    resolved.insert(CATALOG_ID.to_owned(), entry);
+}
+
+fn add_builtin_anthropic_subscription_model(
+    cfg: &Config,
+    resolved: &mut IndexMap<String, ModelEntry>,
+    store: &crate::agent::credential_store::CredentialStore,
+) {
+    const MODEL_ID: &str = "claude-opus-4-6";
+    const CATALOG_ID: &str = "anthropic/claude-opus-4-6";
+    let builtins = crate::agent::connection::builtin_connections();
+    let Some(connection) = crate::agent::connection::resolve_connection(
+        &cfg.connections,
+        "anthropic-subscription",
+        &builtins,
+    ) else {
+        return;
+    };
+    let mut entry = ModelEntry::fallback(MODEL_ID, &cfg.endpoints);
+    connection.apply_as_base_with_store(&mut entry, store);
+    if !entry.has_own_credentials() {
+        return;
+    }
+    entry.info.name = Some("Claude Opus 4.6 (subscription)".to_owned());
+    entry.info.description = Some("Anthropic Claude through your Pro/Max subscription".to_owned());
+    entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
+    resolved.insert(CATALOG_ID.to_owned(), entry);
 }
 /// Layer 6 of [`resolve_model_list`]: fold the global `[models].extra_headers`
 /// into every model as a base. The presence check is case-insensitive because
@@ -4946,6 +5018,76 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use xai_grok_test_support::EnvGuard;
+
+    #[test]
+    fn saved_openai_oauth_adds_a_usable_chatgpt_model() {
+        use base64::Engine as _;
+
+        let claims = serde_json::json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "account-123"
+            }
+        });
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&claims).unwrap());
+        let access = format!("header.{payload}.signature");
+        let mut store = crate::agent::credential_store::CredentialStore::default();
+        store.put(
+            "openai-codex",
+            crate::agent::credential_store::Credential::Oauth {
+                provider: crate::agent::oauth_providers::SubscriptionProvider::OpenAiCodex,
+                tokens: crate::agent::oauth_providers::OAuthTokens {
+                    access: access.clone(),
+                    refresh: Some("refresh-token".to_owned()),
+                    expires_at_ms: u64::MAX,
+                },
+            },
+        );
+
+        let cfg = Config::new_from_toml_cfg(&toml::from_str("").unwrap()).unwrap();
+        let mut models = IndexMap::new();
+        add_builtin_subscription_models_with_store(&cfg, &mut models, &store);
+
+        let model = models
+            .get("openai-codex/gpt-5.4")
+            .expect("ChatGPT model is added");
+        assert_eq!(model.api_key.as_deref(), Some(access.as_str()));
+        assert_eq!(model.info.base_url, "https://chatgpt.com/backend-api/codex");
+        assert_eq!(model.info.api_backend, ApiBackend::Responses);
+        assert_eq!(
+            model.info.extra_headers.get("ChatGPT-Account-ID"),
+            Some(&"account-123".to_owned())
+        );
+        assert_eq!(model.info.context_window.get(), 272_000);
+    }
+
+    #[test]
+    fn saved_anthropic_oauth_adds_a_bearer_authenticated_model() {
+        let mut store = crate::agent::credential_store::CredentialStore::default();
+        store.put(
+            "anthropic",
+            crate::agent::credential_store::Credential::Oauth {
+                provider: crate::agent::oauth_providers::SubscriptionProvider::Anthropic,
+                tokens: crate::agent::oauth_providers::OAuthTokens {
+                    access: "anthropic-oauth-token".to_owned(),
+                    refresh: Some("refresh-token".to_owned()),
+                    expires_at_ms: u64::MAX,
+                },
+            },
+        );
+        let cfg = Config::new_from_toml_cfg(&toml::from_str("").unwrap()).unwrap();
+        let mut models = IndexMap::new();
+        add_builtin_subscription_models_with_store(&cfg, &mut models, &store);
+
+        let model = models
+            .get("anthropic/claude-opus-4-6")
+            .expect("Anthropic subscription model is added");
+        assert_eq!(model.api_key.as_deref(), Some("anthropic-oauth-token"));
+        assert_eq!(model.info.api_backend, ApiBackend::Messages);
+        assert_eq!(model.info.auth_scheme, xai_grok_sampler::AuthScheme::Bearer);
+        assert!(model.info.extra_headers["anthropic-beta"].contains("oauth-2025-04-20"));
+    }
+
     #[test]
     fn main_cli_tools_override_preserves_profile_injection_policy() {
         let overrides = CliAgentOverrides {

@@ -123,6 +123,24 @@ impl OAuthTokens {
     }
 }
 
+/// Extract the ChatGPT account id carried by an OpenAI Codex access token.
+///
+/// ChatGPT subscription requests require this value in the
+/// `ChatGPT-Account-ID` header. The token is already authenticated by TLS and
+/// the provider; this parser only reads the JWT payload to route the request to
+/// the account selected during login.
+pub fn openai_chatgpt_account_id(access_token: &str) -> Option<String> {
+    let payload = access_token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    claims
+        .get("https://api.openai.com/auth")?
+        .get("chatgpt_account_id")?
+        .as_str()
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_owned)
+}
+
 /// PKCE material for the authorization-code flow.
 #[derive(Clone, Debug)]
 pub struct Pkce {
@@ -203,29 +221,53 @@ pub async fn exchange_authorization_code(
     client: &reqwest::Client,
 ) -> anyhow::Result<OAuthTokens> {
     let e = provider.oauth();
-    let body = serde_json::json!({
-        "grant_type": "authorization_code",
-        "client_id": e.client_id,
-        "code": code,
-        "state": state,
-        "redirect_uri": e.redirect_uri,
-        "code_verifier": pkce.verifier,
-    });
-    let resp = client
+    let body = authorization_code_body(provider, code, state, pkce, &e);
+    let request = client
         .post(e.token_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send()
-        .await?;
+        .header("Accept", "application/json");
+    let request = if provider == SubscriptionProvider::OpenAiCodex {
+        // Match the OAuth token endpoint's documented wire format. JSON happens
+        // to be accepted in some deployments, but form encoding is the stable
+        // contract used by the official Codex client.
+        request.form(&body)
+    } else {
+        request.json(&body)
+    };
+    let resp = request.send().await?;
     let status = resp.status();
     let text = resp.text().await?;
     if !status.is_success() {
-        anyhow::bail!("token exchange failed ({status}) at {}: {text}", e.token_url);
+        anyhow::bail!(
+            "token exchange failed ({status}) at {}: {text}",
+            e.token_url
+        );
     }
     let parsed: TokenResponse = serde_json::from_str(&text)
         .map_err(|err| anyhow::anyhow!("invalid token response: {err}; body={text}"))?;
     Ok(parsed.into_tokens())
+}
+
+fn authorization_code_body(
+    provider: SubscriptionProvider,
+    code: &str,
+    state: &str,
+    pkce: &Pkce,
+    endpoints: &OAuthEndpoints,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "grant_type": "authorization_code",
+        "client_id": endpoints.client_id,
+        "code": code,
+        "redirect_uri": endpoints.redirect_uri,
+        "code_verifier": pkce.verifier,
+    });
+
+    // OpenAI validates `state` on the authorize callback but rejects it at the
+    // token endpoint as an unknown parameter. Anthropic's exchange expects it.
+    if provider == SubscriptionProvider::Anthropic {
+        body["state"] = serde_json::Value::String(state.to_owned());
+    }
+    body
 }
 
 /// Refresh an expired access token using a stored refresh token
@@ -241,13 +283,15 @@ pub async fn refresh_tokens(
         "client_id": e.client_id,
         "refresh_token": refresh_token,
     });
-    let resp = client
+    let request = client
         .post(e.token_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send()
-        .await?;
+        .header("Accept", "application/json");
+    let request = if provider == SubscriptionProvider::OpenAiCodex {
+        request.form(&body)
+    } else {
+        request.json(&body)
+    };
+    let resp = request.send().await?;
     let status = resp.status();
     let text = resp.text().await?;
     if !status.is_success() {
@@ -424,6 +468,24 @@ mod tests {
     }
 
     #[test]
+    fn openai_token_exchange_omits_state_but_anthropic_keeps_it() {
+        let pkce = Pkce {
+            verifier: "verifier".into(),
+            challenge: "challenge".into(),
+        };
+        let openai = SubscriptionProvider::OpenAiCodex;
+        let openai_body = authorization_code_body(openai, "code", "state", &pkce, &openai.oauth());
+        assert_eq!(openai_body["code"], "code");
+        assert_eq!(openai_body["code_verifier"], "verifier");
+        assert!(openai_body.get("state").is_none());
+
+        let anthropic = SubscriptionProvider::Anthropic;
+        let anthropic_body =
+            authorization_code_body(anthropic, "code", "state", &pkce, &anthropic.oauth());
+        assert_eq!(anthropic_body["state"], "state");
+    }
+
+    #[test]
     fn rejects_wrong_callback_path_and_surfaces_errors() {
         assert!(parse_callback_query("/wrong?code=a", "/callback").is_err());
         assert!(parse_callback_query("/callback?error=access_denied", "/callback").is_err());
@@ -439,5 +501,21 @@ mod tests {
         .into_tokens();
         // ~55 minutes out (3600s − 5min margin), not expired now.
         assert!(!t.is_expired());
+    }
+
+    #[test]
+    fn extracts_openai_account_id_from_access_token() {
+        let claims = serde_json::json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "account-123"
+            }
+        });
+        let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap());
+        let token = format!("header.{payload}.signature");
+        assert_eq!(
+            openai_chatgpt_account_id(&token).as_deref(),
+            Some("account-123")
+        );
+        assert_eq!(openai_chatgpt_account_id("not-a-jwt"), None);
     }
 }
