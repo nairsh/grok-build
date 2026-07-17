@@ -4,6 +4,7 @@ pub mod auth_method;
 pub mod chat_modes;
 pub mod config;
 pub mod config_model_override_parse;
+pub mod connection;
 mod ext_parsers;
 pub mod feedback_client;
 pub mod folder_trust;

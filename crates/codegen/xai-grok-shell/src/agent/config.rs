@@ -1278,6 +1278,11 @@ pub struct Config {
     /// `[model.*]` overrides from config.toml. Resolve via `resolve_model_list()`.
     #[serde(skip)]
     pub config_models: IndexMap<String, ConfigModelOverride>,
+    /// `[connection.*]` reusable provider connections from config.toml. A model
+    /// may reference one by id (`[model.x] connection = "y"`) to inherit its
+    /// endpoint/adapter/credential. See [`crate::agent::connection`].
+    #[serde(default, rename = "connection")]
+    pub connections: IndexMap<String, crate::agent::connection::ConnectionConfig>,
     /// Warnings from `[model.*]` parsing; surfaced by `grok inspect`.
     #[serde(skip)]
     pub model_override_warnings: Vec<super::config_model_override_parse::ModelOverrideWarning>,
@@ -1706,6 +1711,7 @@ impl Default for Config {
             doom_loop_recovery: crate::util::config::DoomLoopRecoverySettings::default(),
             auto_mode: AutoModeConfig::default(),
             config_models: IndexMap::new(),
+            connections: IndexMap::new(),
             model_override_warnings: Vec::new(),
             grok_com_config: GrokComConfig::default(),
             shortcuts: None,
@@ -3177,7 +3183,21 @@ pub fn resolve_model_list(
     }
     for (key, model_override) in &cfg.config_models {
         let had_base = resolved.contains_key(key);
-        let base = resolved.shift_remove(key);
+        let mut base = resolved.shift_remove(key);
+        // A model that references a `[connection.*]` inherits its
+        // endpoint/adapter/credential as the base; the model's own fields are
+        // applied on top by `ConfigModelOverride::apply` and always win.
+        if let Some(conn_id) = &model_override.connection {
+            let mut seed = base.take().unwrap_or_else(|| ModelEntry::fallback(key, &cfg.endpoints));
+            match cfg.connections.get(conn_id) {
+                Some(conn) => conn.apply_as_base(&mut seed),
+                None => tracing::warn!(
+                    model_key = %key, connection = %conn_id,
+                    "model references unknown [connection.*]; ignoring connection",
+                ),
+            }
+            base = Some(seed);
+        }
         if !had_base {
             tracing::debug!(
                 model_key = % key,
@@ -3570,6 +3590,9 @@ fn is_default_laziness_detector(cfg: &LazinessDetectorPerModelConfig) -> bool {
 #[serde(default)]
 pub struct ConfigModelOverride {
     pub model: Option<String>,
+    /// Reference to a `[connection.<id>]` whose endpoint/adapter/credential this
+    /// model inherits. Fields set directly on the model still win.
+    pub connection: Option<String>,
     pub base_url: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,

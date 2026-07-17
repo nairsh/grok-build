@@ -124,52 +124,38 @@ pub struct ConnectionConfig {
 }
 
 impl ConnectionConfig {
-    /// Overlay this connection's fields onto a model config that referenced it.
-    /// Only fills fields the model left unset — the model always wins.
+    /// Seed a model entry with this connection's endpoint/adapter/auth as the
+    /// **base**, before the model's own `[model.*]` overrides are applied on
+    /// top. This gives the intended precedence — connection provides defaults,
+    /// the model always wins on any field it sets itself
+    /// (`ConfigModelOverride::apply` runs after this and only overwrites fields
+    /// the model specified).
     ///
     /// The credential is translated into the model's existing inline auth fields
     /// where possible (`api_key`/`env_key`), so all downstream resolution
     /// (`resolve_credentials`, `sampling_config_for_model`) works unchanged.
-    /// OAuth credentials cannot be reduced to a static key; they are recorded in
-    /// [`ModelEntryConfig::oauth_provider`] for the credential resolver to pick
-    /// up a live bearer.
-    pub fn apply_to(&self, entry: &mut ModelEntryConfig) {
-        if let Some(base_url) = &self.base_url
-            && entry.base_url.is_empty()
-        {
-            entry.base_url = base_url.clone();
+    /// `Xai` leaves the built-in xAI resolution in place. `Oauth`/`Named` refer
+    /// to stored credentials resolved later by the credential store (they set no
+    /// static key here).
+    pub fn apply_as_base(&self, entry: &mut ModelEntry) {
+        if let Some(base_url) = &self.base_url {
+            entry.info.base_url = base_url.clone();
         }
-        if let Some(adapter) = &self.adapter
-            && entry.api_backend == ApiBackend::default()
-        {
-            entry.api_backend = adapter.clone();
+        if let Some(adapter) = &self.adapter {
+            entry.info.api_backend = adapter.clone();
         }
-        if entry.auth_scheme.is_none() {
-            entry.auth_scheme = self.auth_scheme;
+        if let Some(scheme) = self.auth_scheme {
+            entry.info.auth_scheme = scheme;
         }
-        if entry.api_base_url.is_none() {
+        if self.api_base_url.is_some() {
             entry.api_base_url = self.api_base_url.clone();
         }
-        // Connection headers are defaults; a model-level header on the same key
-        // wins.
-        for (k, v) in &self.extra_headers {
-            entry
-                .extra_headers
-                .entry(k.clone())
-                .or_insert_with(|| v.clone());
+        if !self.extra_headers.is_empty() {
+            entry.info.extra_headers = self.extra_headers.clone();
         }
 
-        // Translate the credential into inline auth fields when the model has no
-        // credential material of its own.
-        let model_has_own_key = entry
-            .api_key
-            .as_deref()
-            .is_some_and(|k| !k.trim().is_empty())
-            || entry.env_key.as_ref().is_some_and(|k| !k.is_empty());
-        if model_has_own_key {
-            return;
-        }
         match &self.credential {
+            // Preserve today's single-vendor resolution / no-op cases.
             CredentialRef::Xai | CredentialRef::None => {}
             CredentialRef::ApiKey(value) => {
                 entry.api_key = resolve_config_value(value);
@@ -177,12 +163,9 @@ impl ConnectionConfig {
             CredentialRef::Env(keys) => {
                 entry.env_key = Some(keys.clone());
             }
-            CredentialRef::Named(id) => {
-                entry.credential_id = Some(id.clone());
-            }
-            CredentialRef::Oauth(provider) => {
-                entry.oauth_provider = Some(provider.clone());
-            }
+            // Stored credentials (saved API keys / OAuth subscriptions) are
+            // resolved by the credential store at request time, not here.
+            CredentialRef::Named(_) | CredentialRef::Oauth(_) => {}
         }
     }
 }
