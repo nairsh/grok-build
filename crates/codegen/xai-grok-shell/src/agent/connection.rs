@@ -170,6 +170,61 @@ impl ConnectionConfig {
     }
 }
 
+/// Built-in connections shipped with the CLI so common providers can be used
+/// without writing a `[connection.*]` block. A user-defined `[connection.<id>]`
+/// with the same id fully overrides the built-in (Pi-style provider override).
+///
+/// These are **API-key** connections keyed off the conventional environment
+/// variable for each provider (matching Pi's `env-api-keys.ts` names). Models
+/// reference them by id, e.g. `[model.gpt-5.1] connection = "openai"`.
+pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
+    let mut m = IndexMap::new();
+    m.insert(
+        "openai".to_owned(),
+        ConnectionConfig {
+            adapter: Some(ApiBackend::Responses),
+            base_url: Some("https://api.openai.com/v1".to_owned()),
+            credential: CredentialRef::Env(EnvKeys::single("OPENAI_API_KEY")),
+            ..Default::default()
+        },
+    );
+    m.insert(
+        "anthropic".to_owned(),
+        ConnectionConfig {
+            adapter: Some(ApiBackend::Messages),
+            base_url: Some("https://api.anthropic.com/v1".to_owned()),
+            // Anthropic Messages authenticates with `x-api-key`, not Bearer, and
+            // requires an API version header.
+            auth_scheme: Some(AuthScheme::XApiKey),
+            extra_headers: [("anthropic-version".to_owned(), "2023-06-01".to_owned())]
+                .into_iter()
+                .collect(),
+            credential: CredentialRef::Env(EnvKeys::single("ANTHROPIC_API_KEY")),
+            ..Default::default()
+        },
+    );
+    m.insert(
+        "openrouter".to_owned(),
+        ConnectionConfig {
+            adapter: Some(ApiBackend::ChatCompletions),
+            base_url: Some("https://openrouter.ai/api/v1".to_owned()),
+            credential: CredentialRef::Env(EnvKeys::single("OPENROUTER_API_KEY")),
+            ..Default::default()
+        },
+    );
+    m
+}
+
+/// Resolve a connection id against user-defined connections first, then the
+/// built-ins. `None` when neither defines it.
+pub fn resolve_connection<'a>(
+    user_connections: &'a IndexMap<String, ConnectionConfig>,
+    id: &str,
+    builtins: &'a IndexMap<String, ConnectionConfig>,
+) -> Option<&'a ConnectionConfig> {
+    user_connections.get(id).or_else(|| builtins.get(id))
+}
+
 /// Resolve a Pi-style config value: `$ENV`/`${ENV}` interpolation, a leading
 /// `!command` (whose stdout is used), `$$`/`$!` escapes, or a literal. Returns
 /// `None` when a referenced environment variable is unset or a command fails —
@@ -264,7 +319,7 @@ fn run_command(cmd: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + '_ {
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| {
             pairs
                 .iter()

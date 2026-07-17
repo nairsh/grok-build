@@ -3189,7 +3189,9 @@ pub fn resolve_model_list(
         // applied on top by `ConfigModelOverride::apply` and always win.
         if let Some(conn_id) = &model_override.connection {
             let mut seed = base.take().unwrap_or_else(|| ModelEntry::fallback(key, &cfg.endpoints));
-            match cfg.connections.get(conn_id) {
+            let builtins = crate::agent::connection::builtin_connections();
+            match crate::agent::connection::resolve_connection(&cfg.connections, conn_id, &builtins)
+            {
                 Some(conn) => conn.apply_as_base(&mut seed),
                 None => tracing::warn!(
                     model_key = %key, connection = %conn_id,
