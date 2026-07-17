@@ -163,11 +163,27 @@ impl ConnectionConfig {
             CredentialRef::Env(keys) => {
                 entry.env_key = Some(keys.clone());
             }
-            // Stored credentials (saved API keys / OAuth subscriptions) are
-            // resolved by the credential store at request time, not here.
-            CredentialRef::Named(_) | CredentialRef::Oauth(_) => {}
+            // Stored credentials (saved API keys / OAuth subscriptions): inject
+            // the current bearer from the credential store as the model's key.
+            // This is a snapshot; a live-refreshing `bearer_resolver` (analogous
+            // to the xAI session-token path) is the follow-up seam. A missing
+            // credential leaves the key unset — the model is simply unavailable,
+            // exactly like an unset `env_key`.
+            CredentialRef::Named(id) | CredentialRef::Oauth(id) => {
+                entry.api_key = load_stored_bearer(id);
+            }
         }
     }
+}
+
+/// Read the current bearer for a stored credential id from the on-disk
+/// credential store. Returns `None` (model unavailable) when the store or the
+/// credential is absent, mirroring an unresolved `env_key`.
+fn load_stored_bearer(id: &str) -> Option<String> {
+    let path = crate::agent::credential_store::CredentialStore::default_path();
+    crate::agent::credential_store::CredentialStore::load(&path)
+        .ok()?
+        .current_bearer(id)
 }
 
 /// Built-in connections shipped with the CLI so common providers can be used

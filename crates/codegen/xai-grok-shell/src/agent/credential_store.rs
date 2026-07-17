@@ -142,6 +142,31 @@ pub async fn ensure_fresh(
     Ok(true)
 }
 
+/// Run a subscription provider's OAuth login and persist the resulting tokens
+/// to the credential store under the provider's id. Returns the credential id
+/// that a `[connection.*]` should reference via `credential = { oauth = "<id>" }`.
+///
+/// Only the PKCE-loopback providers (Claude Pro/Max, ChatGPT Codex) are wired
+/// here; GitHub Copilot's device-code flow is a follow-up. This is the single
+/// call a `grok login <provider>` command needs; it lives in the shell crate so
+/// the CLI hook stays a one-liner.
+///
+/// Live login requires the user's subscription and a browser — unverified in CI.
+pub async fn login_and_store(
+    provider: SubscriptionProvider,
+    path: &Path,
+    client: &reqwest::Client,
+    open_browser: bool,
+) -> anyhow::Result<String> {
+    let tokens = crate::agent::oauth_providers::run_loopback_login(provider, client, open_browser)
+        .await?;
+    let mut store = CredentialStore::load(path)?;
+    let id = provider.id().to_owned();
+    store.put(id.clone(), Credential::Oauth { provider, tokens });
+    store.save(path)?;
+    Ok(id)
+}
+
 /// A [`xai_grok_sampler::BearerResolver`] backed by the credential store, so a
 /// connection's OAuth/named credential feeds the sampler's live per-request
 /// bearer the same way xAI session tokens do. Refresh is driven out-of-band via
