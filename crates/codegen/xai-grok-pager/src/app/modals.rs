@@ -1511,10 +1511,21 @@ impl AgentView {
         if let Some(ActiveModal::ProviderLogin { state }) = &mut self.active_modal {
             let outcome =
                 mw::handle_modal_mouse(&mut state.window, mouse.kind, mouse.column, mouse.row);
-            if matches!(outcome, ModalWindowOutcome::CloseRequested) {
-                self.active_modal = None;
-            }
-            return InputOutcome::Changed;
+            return match outcome {
+                ModalWindowOutcome::CloseRequested => {
+                    self.active_modal = None;
+                    InputOutcome::Changed
+                }
+                ModalWindowOutcome::Unhandled => {
+                    crate::views::provider_login_modal::handle_provider_login_mouse(
+                        state,
+                        mouse.kind,
+                        mouse.column,
+                        mouse.row,
+                    )
+                }
+                _ => InputOutcome::Changed,
+            };
         }
 
         // Settings: route through ModalWindow chrome, then delegate.
@@ -1608,6 +1619,16 @@ impl AgentView {
             }
             _ => InputOutcome::Changed,
         }
+    }
+
+    /// Route bracketed paste and Cmd/Ctrl+V input to forms that own a text
+    /// field. Most modals deliberately consume paste, but provider credentials
+    /// are entered directly in the native `/login` form.
+    pub(super) fn handle_modal_paste(&mut self, text: &str) -> InputOutcome {
+        if let Some(ActiveModal::ProviderLogin { state }) = &mut self.active_modal {
+            return crate::views::provider_login_modal::handle_provider_login_paste(state, text);
+        }
+        InputOutcome::Changed
     }
 
     /// Draw the active modal overlay: the per-`ActiveModal`-variant render

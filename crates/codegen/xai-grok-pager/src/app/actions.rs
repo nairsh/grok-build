@@ -615,6 +615,9 @@ pub enum Action {
     RunProviderLogin {
         provider: String,
     },
+    /// Fetch models from the API endpoint currently being configured in the
+    /// native provider-login form.
+    DiscoverProviderModels,
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit
@@ -1336,6 +1339,13 @@ pub enum Effect {
     /// Authenticate a subscription provider in the system browser while the
     /// current TUI and session remain alive.
     ProviderOauthLogin { agent_id: AgentId, provider: String },
+    /// Fetch an OpenAI-compatible `/models` catalog without suspending the
+    /// running TUI. The API key is kept only for this in-flight request.
+    ProviderModelDiscovery {
+        agent_id: AgentId,
+        base_url: String,
+        api_key: String,
+    },
     /// Create a new ACP session.
     CreateSession {
         agent_id: AgentId,
@@ -2072,6 +2082,11 @@ pub enum TaskResult {
         agent_id: AgentId,
         provider: String,
         result: Result<(), String>,
+    },
+    /// OpenAI-compatible model discovery completed for the native login form.
+    ProviderModelDiscoveryComplete {
+        agent_id: AgentId,
+        result: Result<Vec<String>, String>,
     },
     /// Session was created successfully.
     SessionCreated {

@@ -188,6 +188,19 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
+        TaskResult::ProviderModelDiscoveryComplete { agent_id, result } => {
+            if let Some(agent) = app.agents.get_mut(&agent_id)
+                && let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                    agent.active_modal.as_mut()
+            {
+                let result = match &result {
+                    Ok(models) => Ok(models.as_slice()),
+                    Err(error) => Err(error.as_str()),
+                };
+                state.finish_model_discovery(result);
+            }
+            vec![]
+        }
         TaskResult::SessionCreated {
             agent_id,
             session_id,

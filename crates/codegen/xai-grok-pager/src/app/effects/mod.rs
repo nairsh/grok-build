@@ -67,6 +67,20 @@ pub(crate) fn execute(
                 }
             });
         }
+        Effect::ProviderModelDiscovery {
+            agent_id,
+            base_url,
+            api_key,
+        } => {
+            tasks.spawn(async move {
+                let result = xai_grok_shell::agent::login_interactive::discover_openai_models_at(
+                    &base_url, &api_key,
+                )
+                .await
+                .map_err(|error| sanitize_user_error(&error.to_string()));
+                TaskResult::ProviderModelDiscoveryComplete { agent_id, result }
+            });
+        }
         Effect::RegisterActiveSession { session_id, cwd } => {
             crate::app::signal_handler::set_current_session_id(Some(session_id.clone()));
             if let Err(e) = xai_grok_shell::active_sessions::register(xai_grok_shell::active_sessions::ActiveSession {

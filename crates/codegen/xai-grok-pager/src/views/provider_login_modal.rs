@@ -1,6 +1,8 @@
 //! Native provider login and credential-management modal for `/login`.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -60,6 +62,10 @@ struct ApiKeyForm {
     base_url: Option<String>,
     api_key: String,
     model: String,
+    /// Full catalog returned by the endpoint's OpenAI-compatible `/models`
+    /// resource. It is saved with the connection so `/model` can use it.
+    models: Vec<String>,
+    discovering_models: bool,
     field: usize,
 }
 
@@ -82,6 +88,8 @@ impl ApiKeyForm {
             base_url,
             api_key: String::new(),
             model,
+            models: Vec::new(),
+            discovering_models: false,
             field: 0,
         }
     }
@@ -99,12 +107,44 @@ impl ApiKeyForm {
         }
     }
 
+    fn model_field(&self) -> usize {
+        self.field_count() - 1
+    }
+
+    fn models_to_save(&self) -> Vec<String> {
+        let selected = self.model.trim();
+        let mut models = self
+            .models
+            .iter()
+            .map(|model| model.trim())
+            .filter(|model| !model.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if !selected.is_empty() {
+            models.retain(|model| model != selected);
+            // The selected model remains the default while every discovered
+            // model stays available in `/model`.
+            models.insert(0, selected.to_owned());
+        }
+        models
+    }
+
+    fn select_model(&mut self, direction: isize) -> bool {
+        let Some(current) = self.models.iter().position(|model| model == &self.model) else {
+            return false;
+        };
+        let next = (current as isize + direction).rem_euclid(self.models.len() as isize) as usize;
+        self.model = self.models[next].clone();
+        true
+    }
+
     fn save(&self) -> anyhow::Result<()> {
+        let models = self.models_to_save();
         xai_grok_shell::agent::login_interactive::save_api_key_connection_for_provider(
             &self.provider,
             self.connection_name.trim(),
             self.api_key.trim(),
-            self.model.trim().to_owned(),
+            &models,
             self.base_url.clone(),
         )
     }
@@ -115,6 +155,8 @@ impl ApiKeyForm {
 #[derive(Debug, Clone)]
 pub struct ProviderLoginModalState {
     pub window: ModalWindowState,
+    /// Captured during rendering so mouse input can target the form fields.
+    content_area: Option<Rect>,
     entries: Vec<Entry>,
     selected: usize,
     scroll: usize,
@@ -126,6 +168,7 @@ impl ProviderLoginModalState {
     pub fn new(preselected_provider: Option<String>) -> Self {
         let mut state = Self {
             window: ModalWindowState::new(),
+            content_area: None,
             entries: build_entries(),
             selected: 0,
             scroll: 0,
@@ -160,6 +203,71 @@ impl ProviderLoginModalState {
             })
             .unwrap_or(0);
         self.move_to_selectable(1);
+    }
+
+    /// Start a native model discovery request. This only applies to LiteLLM
+    /// and custom OpenAI-compatible connections, which have an editable base
+    /// URL. The actual HTTP request runs as an async app effect.
+    fn start_model_discovery(&mut self) -> Result<(), String> {
+        let Mode::ApiKey(form) = &mut self.mode else {
+            return Err("Open an API-key connection first.".to_owned());
+        };
+        let Some(base_url) = form.base_url.as_deref() else {
+            return Err("This provider does not expose a custom /models endpoint.".to_owned());
+        };
+        if base_url.trim().is_empty() {
+            return Err("Enter an API base URL before loading models.".to_owned());
+        }
+        if form.api_key.trim().is_empty() {
+            return Err("Enter an API key before loading models.".to_owned());
+        }
+        if form.discovering_models {
+            return Err("Models are already loading.".to_owned());
+        }
+        form.discovering_models = true;
+        self.notice = Some("Loading models from the endpoint…".to_owned());
+        Ok(())
+    }
+
+    /// Return the transient credentials for the request after discovery has
+    /// been started. They are never rendered or stored in an action/result.
+    pub fn model_discovery_credentials(&self) -> Option<(String, String)> {
+        let Mode::ApiKey(form) = &self.mode else {
+            return None;
+        };
+        if !form.discovering_models {
+            return None;
+        }
+        let base_url = form.base_url.as_deref()?.trim().trim_end_matches('/');
+        (!base_url.is_empty() && !form.api_key.trim().is_empty())
+            .then(|| (base_url.to_owned(), form.api_key.trim().to_owned()))
+    }
+
+    /// Apply a `/models` response to the focused form. The first discovered
+    /// model becomes the default; all results are retained for `/model`.
+    pub fn finish_model_discovery(&mut self, result: Result<&[String], &str>) {
+        let Mode::ApiKey(form) = &mut self.mode else {
+            return;
+        };
+        form.discovering_models = false;
+        match result {
+            Ok(models) if !models.is_empty() => {
+                form.models = models.to_vec();
+                form.model = form.models[0].clone();
+                form.field = form.model_field();
+                self.notice = Some(format!(
+                    "Loaded {} models. Use ↑/↓ in Model id to choose the default.",
+                    form.models.len()
+                ));
+            }
+            Ok(_) => {
+                self.notice =
+                    Some("The endpoint returned no models; enter an id manually.".to_owned());
+            }
+            Err(error) => {
+                self.notice = Some(format!("Could not fetch /models: {error}"));
+            }
+        }
     }
 
     /// Finish an in-process browser login. This intentionally returns to the
@@ -439,8 +547,10 @@ pub fn render_provider_login_modal(
     let Some(ModalContentArea { content, .. }) =
         modal_window::render_modal_window(buf, full_area, &mut state.window, &config, &theme)
     else {
+        state.content_area = None;
         return;
     };
+    state.content_area = Some(content);
     if content.height < 3 || content.width < 12 {
         return;
     }
@@ -578,7 +688,19 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
         fields.push(("API base URL", base_url.as_str(), false));
     }
     fields.push(("API key", form.api_key.as_str(), true));
-    fields.push(("Model id", form.model.as_str(), false));
+    let model_label = if form.discovering_models {
+        "Model id (loading /models…)".to_owned()
+    } else if form.models.is_empty() {
+        "Model id".to_owned()
+    } else {
+        let index = form
+            .models
+            .iter()
+            .position(|model| model == &form.model)
+            .map_or(1, |index| index + 1);
+        format!("Model id ({index}/{})", form.models.len())
+    };
+    fields.push((model_label.as_str(), form.model.as_str(), false));
     for (index, (label, value, secret)) in fields.iter().enumerate() {
         let y = content.y + 2 + index as u16 * 2;
         if y >= content.y + content.height.saturating_sub(1) {
@@ -604,7 +726,7 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
         content.x,
         hint_y,
         &Span::styled(
-            "Tab/Enter moves fields · Ctrl+S saves. LiteLLM/custom endpoints can use /models discovery later via `atlas login`. ",
+            "Tab from API key loads /models · Ctrl+R reloads · ↑/↓ chooses a model · Ctrl+S saves.",
             Style::default().fg(theme.gray),
         ),
         content.width,
@@ -626,6 +748,25 @@ pub fn handle_provider_login_key(
         }
         return InputOutcome::Changed;
     }
+    // Most terminals emit Cmd/Ctrl+V as Event::Paste, but Ghostty and
+    // similar terminals can send it as a key chord. Support both paths.
+    if matches!(state.mode, Mode::ApiKey(_)) && crate::input::key::is_paste_key(key) {
+        return crate::clipboard::system_clipboard_get().map_or(InputOutcome::Unchanged, |text| {
+            paste_into_active_field(state, &text)
+        });
+    }
+    if matches!(state.mode, Mode::ApiKey(_))
+        && matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R'))
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return match state.start_model_discovery() {
+            Ok(()) => InputOutcome::Action(Action::DiscoverProviderModels),
+            Err(error) => {
+                state.notice = Some(error);
+                InputOutcome::Changed
+            }
+        };
+    }
     if let Mode::ApiKey(form) = &mut state.mode {
         match key.code {
             KeyCode::Esc => {
@@ -634,7 +775,16 @@ pub fn handle_provider_login_key(
             }
             KeyCode::Tab | KeyCode::Enter => {
                 form.field = (form.field + 1) % form.field_count();
-                return InputOutcome::Changed;
+                let load_models = form.field == form.model_field()
+                    && form.models.is_empty()
+                    && form.base_url.is_some()
+                    && !form.discovering_models;
+                if load_models {
+                    // Drop the form borrow before starting the stateful async
+                    // request below.
+                } else {
+                    return InputOutcome::Changed;
+                }
             }
             KeyCode::BackTab => {
                 form.field = form.field.checked_sub(1).unwrap_or(form.field_count() - 1);
@@ -642,6 +792,12 @@ pub fn handle_provider_login_key(
             }
             KeyCode::Backspace => {
                 form.active_text_mut().pop();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Up if form.field == form.model_field() && form.select_model(-1) => {
+                return InputOutcome::Changed;
+            }
+            KeyCode::Down if form.field == form.model_field() && form.select_model(1) => {
                 return InputOutcome::Changed;
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -664,6 +820,18 @@ pub fn handle_provider_login_key(
             }
             _ => return InputOutcome::Unchanged,
         }
+    }
+    // Reaching the Model id field after entering a LiteLLM/custom key starts
+    // discovery automatically. If validation fails, keep the form open with a
+    // clear message and allow the user to correct the missing value.
+    if matches!(state.mode, Mode::ApiKey(_)) {
+        return match state.start_model_discovery() {
+            Ok(()) => InputOutcome::Action(Action::DiscoverProviderModels),
+            Err(error) => {
+                state.notice = Some(error);
+                InputOutcome::Changed
+            }
+        };
     }
     if matches!(state.mode, Mode::WaitingForBrowser { .. }) {
         return InputOutcome::Unchanged;
@@ -709,5 +877,115 @@ pub fn handle_provider_login_key(
             _ => InputOutcome::Unchanged,
         },
         _ => InputOutcome::Unchanged,
+    }
+}
+
+/// Paste into the focused API-key form field. Terminal paste payloads can
+/// include a trailing newline, which must not become part of a credential or
+/// endpoint value.
+pub fn handle_provider_login_paste(
+    state: &mut ProviderLoginModalState,
+    text: &str,
+) -> InputOutcome {
+    paste_into_active_field(state, text)
+}
+
+fn paste_into_active_field(state: &mut ProviderLoginModalState, text: &str) -> InputOutcome {
+    let cleaned: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    if cleaned.is_empty() {
+        return InputOutcome::Unchanged;
+    }
+    let Mode::ApiKey(form) = &mut state.mode else {
+        return InputOutcome::Unchanged;
+    };
+    form.active_text_mut().push_str(&cleaned);
+    InputOutcome::Changed
+}
+
+/// Handle mouse selection inside the provider modal. The common modal chrome
+/// (close button and click-outside) is handled before this function.
+pub fn handle_provider_login_mouse(
+    state: &mut ProviderLoginModalState,
+    kind: MouseEventKind,
+    column: u16,
+    row: u16,
+) -> InputOutcome {
+    if !matches!(kind, MouseEventKind::Down(MouseButton::Left)) {
+        return InputOutcome::Unchanged;
+    }
+    let Some(content) = state.content_area else {
+        return InputOutcome::Unchanged;
+    };
+    if !content.contains((column, row).into()) {
+        return InputOutcome::Unchanged;
+    }
+
+    if let Mode::ApiKey(form) = &mut state.mode {
+        let first_field_y = content.y.saturating_add(2);
+        if row < first_field_y || (row - first_field_y) % 2 != 0 {
+            return InputOutcome::Unchanged;
+        }
+        let field = ((row - first_field_y) / 2) as usize;
+        if field < form.field_count() {
+            form.field = field;
+            return InputOutcome::Changed;
+        }
+        return InputOutcome::Unchanged;
+    }
+
+    if matches!(state.mode, Mode::Browse) {
+        let first_row_y = content.y.saturating_add(2);
+        if row >= first_row_y {
+            let index = state.scroll + (row - first_row_y) as usize;
+            if state.entries.get(index).is_some_and(Entry::selectable) {
+                state.selected = index;
+                return InputOutcome::Changed;
+            }
+        }
+    }
+    InputOutcome::Unchanged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paste_inserts_cleaned_text_into_the_focused_field() {
+        let mut state = ProviderLoginModalState::new(None);
+        state.mode = Mode::ApiKey(ApiKeyForm::new("litellm".to_owned()));
+        if let Mode::ApiKey(form) = &mut state.mode {
+            form.field = 2; // API key when LiteLLM includes the base URL field.
+        }
+
+        assert!(matches!(
+            handle_provider_login_paste(&mut state, "sk-secret\r\n"),
+            InputOutcome::Changed
+        ));
+        let Mode::ApiKey(form) = &state.mode else {
+            panic!("form should stay open");
+        };
+        assert_eq!(form.api_key, "sk-secret");
+    }
+
+    #[test]
+    fn clicking_a_form_row_focuses_that_field() {
+        let mut state = ProviderLoginModalState::new(None);
+        state.mode = Mode::ApiKey(ApiKeyForm::new("litellm".to_owned()));
+        state.content_area = Some(Rect::new(10, 5, 80, 20));
+
+        assert!(matches!(
+            handle_provider_login_mouse(
+                &mut state,
+                MouseEventKind::Down(MouseButton::Left),
+                20,
+                11
+            ),
+            InputOutcome::Changed
+        ));
+        let Mode::ApiKey(form) = &state.mode else {
+            panic!("form should stay open");
+        };
+        assert_eq!(form.field, 2); // content y + 2 + 2 * 2 = API key
     }
 }

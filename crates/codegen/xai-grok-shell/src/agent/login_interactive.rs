@@ -303,7 +303,7 @@ pub fn save_api_key_connection_for_provider(
     provider_id: &str,
     connection_id: &str,
     api_key: &str,
-    model: String,
+    models: &[String],
     base_url: Option<String>,
 ) -> anyhow::Result<()> {
     let preset = api_key_provider_presets()
@@ -322,7 +322,7 @@ pub fn save_api_key_connection_for_provider(
         anyhow::ensure!(!base_url.is_empty(), "API base URL must not be empty");
         connection.base_url = Some(base_url.to_owned());
     }
-    save_api_key_connection(connection_id, api_key, &[model], connection)
+    save_api_key_connection(connection_id, api_key, models, connection)
 }
 
 /// Complete a subscription login from an embedded UI without requiring that UI
@@ -362,14 +362,41 @@ async fn discover_openai_models(
     let base_url = connection
         .base_url
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("connection has no base URL"))?
-        .trim_end_matches('/');
-    let response = reqwest::Client::new()
-        .get(format!("{base_url}/models"))
-        .bearer_auth(api_key)
-        .send()
-        .await?
-        .error_for_status()?;
+        .ok_or_else(|| anyhow::anyhow!("connection has no base URL"))?;
+    discover_openai_models_at(base_url, api_key).await
+}
+
+/// Fetch the complete model catalog from an OpenAI-compatible endpoint.
+///
+/// Used by both the line-based login command and the native TUI. `base_url`
+/// is the API root (for example `http://localhost:4000/v1`); this function
+/// requests its standard `/models` resource.
+pub async fn discover_openai_models_at(
+    base_url: &str,
+    api_key: &str,
+) -> anyhow::Result<Vec<String>> {
+    let base_url = base_url.trim().trim_end_matches('/');
+    anyhow::ensure!(!base_url.is_empty(), "API base URL must not be empty");
+    anyhow::ensure!(!api_key.trim().is_empty(), "API key must not be empty");
+    let client = reqwest::Client::new();
+    let direct_url = format!("{base_url}/models");
+    let response = client.get(&direct_url).bearer_auth(api_key).send().await?;
+    // LiteLLM is commonly configured with either the API root
+    // (`http://host:4000`) or the OpenAI-compatible root
+    // (`http://host:4000/v1`). Support both without making the user know
+    // which form their gateway expects.
+    let response = if response.status() == reqwest::StatusCode::NOT_FOUND
+        && !base_url.trim_end_matches('/').ends_with("/v1")
+    {
+        client
+            .get(format!("{base_url}/v1/models"))
+            .bearer_auth(api_key)
+            .send()
+            .await?
+    } else {
+        response
+    }
+    .error_for_status()?;
     let mut models = response
         .json::<OpenAiModelsResponse>()
         .await?

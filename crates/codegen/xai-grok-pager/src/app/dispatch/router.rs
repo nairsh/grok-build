@@ -1183,6 +1183,27 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 _ => vec![],
             }
         }
+        Action::DiscoverProviderModels => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&agent_id) else {
+                return vec![];
+            };
+            let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                agent.active_modal.as_ref()
+            else {
+                return vec![];
+            };
+            let Some((base_url, api_key)) = state.model_discovery_credentials() else {
+                return vec![];
+            };
+            vec![Effect::ProviderModelDiscovery {
+                agent_id,
+                base_url,
+                api_key,
+            }]
+        }
         Action::OpenDashboard => dispatch_open_dashboard(app),
         Action::ExitDashboard => dispatch_exit_dashboard(app),
         Action::DashboardAttach(id) => dispatch_dashboard_attach(app, id),
