@@ -3322,6 +3322,13 @@ fn add_builtin_api_key_models_with_store(
 ) {
     let builtins = crate::agent::connection::builtin_connections();
     for preset in crate::agent::connection::api_key_provider_presets() {
+        // A connection with explicit `[model.*]` entries has an authoritative
+        // catalog (for example, LiteLLM's `/v1/models` response). Do not add
+        // the preset's generic fallback alongside it: that model may not
+        // exist on the user's endpoint.
+        if has_explicit_models_for_connection(cfg, preset.id) {
+            continue;
+        }
         let catalog_id = format!("{}/{}", preset.id, preset.default_model);
         if resolved.contains_key(&catalog_id) {
             continue;
@@ -3346,6 +3353,12 @@ fn add_builtin_api_key_models_with_store(
         ));
         resolved.insert(catalog_id, entry);
     }
+}
+
+fn has_explicit_models_for_connection(cfg: &Config, connection_id: &str) -> bool {
+    cfg.config_models
+        .values()
+        .any(|model| model.connection.as_deref() == Some(connection_id))
 }
 
 fn add_builtin_subscription_models_with_store(
@@ -6345,6 +6358,23 @@ reasoning_effort = "low"
             "base_url should inherit from default, not be stale"
         );
     }
+
+    #[test]
+    fn explicit_litellm_models_suppress_the_generic_preset_fallback() {
+        let raw_config: toml::Value = toml::from_str(
+            r#"
+            [model."litellm/openrouter/gemini-3.5-flash"]
+            connection = "litellm"
+            model = "openrouter/gemini-3.5-flash"
+            "#,
+        )
+        .expect("config should parse");
+        let cfg = Config::new_from_toml_cfg(&raw_config).expect("config should parse");
+
+        assert!(has_explicit_models_for_connection(&cfg, "litellm"));
+        assert!(!has_explicit_models_for_connection(&cfg, "openai"));
+    }
+
     #[test]
     fn config_override_applies_show_model_fingerprint() {
         let endpoints = EndpointsConfig::default();
