@@ -66,6 +66,9 @@ struct ApiKeyForm {
     /// resource. It is saved with the connection so `/model` can use it.
     models: Vec<String>,
     discovering_models: bool,
+    /// Only shown if `/models` is unavailable. Normal LiteLLM/custom setup
+    /// never asks the user to know a model identifier.
+    manual_model_entry: bool,
     field: usize,
 }
 
@@ -78,7 +81,9 @@ impl ApiKeyForm {
             Some(preset) => (
                 provider.clone(),
                 (provider == "litellm").then(|| preset.connection.base_url.unwrap_or_default()),
-                preset.default_model.to_owned(),
+                (provider != "litellm")
+                    .then(|| preset.default_model.to_owned())
+                    .unwrap_or_default(),
             ),
             None => ("custom".to_owned(), Some(String::new()), String::new()),
         };
@@ -90,25 +95,35 @@ impl ApiKeyForm {
             model,
             models: Vec::new(),
             discovering_models: false,
+            manual_model_entry: false,
             field: 0,
         }
     }
 
     fn field_count(&self) -> usize {
-        3 + usize::from(self.base_url.is_some())
+        2 + usize::from(self.base_url.is_some()) + usize::from(self.needs_model_field())
+    }
+
+    fn api_key_field(&self) -> usize {
+        1 + usize::from(self.base_url.is_some())
+    }
+
+    fn needs_model_field(&self) -> bool {
+        self.base_url.is_none() || self.manual_model_entry
     }
 
     fn active_text_mut(&mut self) -> &mut String {
         match self.field {
             0 => &mut self.connection_name,
             1 if self.base_url.is_some() => self.base_url.as_mut().expect("checked above"),
-            field if field + 1 == self.field_count() => &mut self.model,
-            _ => &mut self.api_key,
+            field if self.needs_model_field() && field + 1 == self.field_count() => &mut self.model,
+            field if field == self.api_key_field() => &mut self.api_key,
+            _ => unreachable!("form field index is always valid"),
         }
     }
 
-    fn model_field(&self) -> usize {
-        self.field_count() - 1
+    fn model_field(&self) -> Option<usize> {
+        self.needs_model_field().then(|| self.field_count() - 1)
     }
 
     fn models_to_save(&self) -> Vec<String> {
@@ -127,15 +142,6 @@ impl ApiKeyForm {
             models.insert(0, selected.to_owned());
         }
         models
-    }
-
-    fn select_model(&mut self, direction: isize) -> bool {
-        let Some(current) = self.models.iter().position(|model| model == &self.model) else {
-            return false;
-        };
-        let next = (current as isize + direction).rem_euclid(self.models.len() as isize) as usize;
-        self.model = self.models[next].clone();
-        true
     }
 
     fn save(&self) -> anyhow::Result<()> {
@@ -229,8 +235,8 @@ impl ProviderLoginModalState {
         Ok(())
     }
 
-    /// Return the transient credentials for the request after discovery has
-    /// been started. They are never rendered or stored in an action/result.
+    /// Return the transient credentials for the in-flight discovery effect.
+    /// They are never rendered or persisted until the user saves the form.
     pub fn model_discovery_credentials(&self) -> Option<(String, String)> {
         let Mode::ApiKey(form) = &self.mode else {
             return None;
@@ -254,17 +260,17 @@ impl ProviderLoginModalState {
             Ok(models) if !models.is_empty() => {
                 form.models = models.to_vec();
                 form.model = form.models[0].clone();
-                form.field = form.model_field();
-                self.notice = Some(format!(
-                    "Loaded {} models. Use ↑/↓ in Model id to choose the default.",
-                    form.models.len()
-                ));
+                self.notice = Some(format!("Loaded {} models from /models.", form.models.len()));
             }
             Ok(_) => {
+                form.manual_model_entry = true;
+                form.field = form.model_field().expect("manual field enabled");
                 self.notice =
                     Some("The endpoint returned no models; enter an id manually.".to_owned());
             }
             Err(error) => {
+                form.manual_model_entry = true;
+                form.field = form.model_field().expect("manual field enabled");
                 self.notice = Some(format!("Could not fetch /models: {error}"));
             }
         }
@@ -688,19 +694,9 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
         fields.push(("API base URL", base_url.as_str(), false));
     }
     fields.push(("API key", form.api_key.as_str(), true));
-    let model_label = if form.discovering_models {
-        "Model id (loading /models…)".to_owned()
-    } else if form.models.is_empty() {
-        "Model id".to_owned()
-    } else {
-        let index = form
-            .models
-            .iter()
-            .position(|model| model == &form.model)
-            .map_or(1, |index| index + 1);
-        format!("Model id ({index}/{})", form.models.len())
-    };
-    fields.push((model_label.as_str(), form.model.as_str(), false));
+    if form.needs_model_field() {
+        fields.push(("Model id", form.model.as_str(), false));
+    }
     for (index, (label, value, secret)) in fields.iter().enumerate() {
         let y = content.y + 2 + index as u16 * 2;
         if y >= content.y + content.height.saturating_sub(1) {
@@ -721,12 +717,32 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
         };
         buf.set_span(content.x, y, &Span::styled(text, style), content.width);
     }
+    if form.base_url.is_some() {
+        let y = content.y + 2 + fields.len() as u16 * 2;
+        let status = if form.discovering_models {
+            "Models: loading from /models…".to_owned()
+        } else if form.models.is_empty() {
+            "Models: paste an API key to load the endpoint catalog.".to_owned()
+        } else {
+            format!(
+                "Default model: {}  ({} discovered)",
+                form.model,
+                form.models.len()
+            )
+        };
+        buf.set_span(
+            content.x,
+            y,
+            &Span::styled(status, Style::default().fg(theme.gray)),
+            content.width,
+        );
+    }
     let hint_y = content.y + content.height.saturating_sub(1);
     buf.set_span(
         content.x,
         hint_y,
         &Span::styled(
-            "Tab from API key loads /models · Ctrl+R reloads · ↑/↓ chooses a model · Ctrl+S saves.",
+            "Pasting an API key loads /models · Ctrl+R reloads · Ctrl+S saves.",
             Style::default().fg(theme.gray),
         ),
         content.width,
@@ -752,7 +768,7 @@ pub fn handle_provider_login_key(
     // similar terminals can send it as a key chord. Support both paths.
     if matches!(state.mode, Mode::ApiKey(_)) && crate::input::key::is_paste_key(key) {
         return crate::clipboard::system_clipboard_get().map_or(InputOutcome::Unchanged, |text| {
-            paste_into_active_field(state, &text)
+            paste_and_maybe_discover_models(state, &text)
         });
     }
     if matches!(state.mode, Mode::ApiKey(_))
@@ -774,8 +790,9 @@ pub fn handle_provider_login_key(
                 return InputOutcome::Changed;
             }
             KeyCode::Tab | KeyCode::Enter => {
+                let leaving_api_key = form.field == form.api_key_field();
                 form.field = (form.field + 1) % form.field_count();
-                let load_models = form.field == form.model_field()
+                let load_models = leaving_api_key
                     && form.models.is_empty()
                     && form.base_url.is_some()
                     && !form.discovering_models;
@@ -792,12 +809,6 @@ pub fn handle_provider_login_key(
             }
             KeyCode::Backspace => {
                 form.active_text_mut().pop();
-                return InputOutcome::Changed;
-            }
-            KeyCode::Up if form.field == form.model_field() && form.select_model(-1) => {
-                return InputOutcome::Changed;
-            }
-            KeyCode::Down if form.field == form.model_field() && form.select_model(1) => {
                 return InputOutcome::Changed;
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -887,7 +898,33 @@ pub fn handle_provider_login_paste(
     state: &mut ProviderLoginModalState,
     text: &str,
 ) -> InputOutcome {
-    paste_into_active_field(state, text)
+    paste_and_maybe_discover_models(state, text)
+}
+
+fn paste_and_maybe_discover_models(
+    state: &mut ProviderLoginModalState,
+    text: &str,
+) -> InputOutcome {
+    let pasted = paste_into_active_field(state, text);
+    if !matches!(pasted, InputOutcome::Changed) {
+        return pasted;
+    }
+    let should_discover = matches!(&state.mode, Mode::ApiKey(form)
+        if form.field == form.api_key_field()
+            && form.base_url.is_some()
+            && !form.api_key.trim().is_empty()
+            && form.models.is_empty()
+            && !form.discovering_models);
+    if !should_discover {
+        return pasted;
+    }
+    match state.start_model_discovery() {
+        Ok(()) => InputOutcome::Action(Action::DiscoverProviderModels),
+        Err(error) => {
+            state.notice = Some(error);
+            InputOutcome::Changed
+        }
+    }
 }
 
 fn paste_into_active_field(state: &mut ProviderLoginModalState, text: &str) -> InputOutcome {
