@@ -81,10 +81,16 @@ jobs:
             linux-x86_64) pkg=protoc-29.3-linux-x86_64.zip; exe=protoc ;;
             linux-aarch64) pkg=protoc-29.3-linux-aarch_64.zip; exe=protoc ;;
           esac
-          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+          # Git Bash tar misreads "D:\..." as a remote host; use a POSIX path
+          # for shell operations and keep the native path for cargo's $PROTOC.
+          tmp="$RUNNER_TEMP"
+          if command -v cygpath >/dev/null 2>&1; then
+            tmp="$(cygpath -u "$RUNNER_TEMP")"
+          fi
+          curl -fsSL -o "$tmp/protoc.zip" \
             "https://github.com/protocolbuffers/protobuf/releases/download/v29.3/${pkg}"
-          tar -xf "$RUNNER_TEMP/protoc.zip" -C "$RUNNER_TEMP"
-          chmod +x "$RUNNER_TEMP/bin/$exe"
+          tar -xf "$tmp/protoc.zip" -C "$tmp"
+          chmod +x "$tmp/bin/$exe"
           echo "PROTOC=$RUNNER_TEMP/bin/$exe" >> "$GITHUB_ENV"
 
       - uses: Swatinem/rust-cache@v2
