@@ -12,7 +12,8 @@ Releases, and the in-app auto-updater has been migrated to point at
 3. The `Release` workflow (`.github/workflows/release.yml`) builds the
    `atlas` binary with the hardened `release-dist` profile for:
    - `macos-aarch64`, `macos-x86_64`
-   - `linux-x86_64`, `linux-aarch64`
+   - `linux-x86_64` (`linux-aarch64` is commented out in the matrix — the
+     hosted ARM runner is unavailable on private repos)
    - `windows-x86_64`
 4. It publishes a GitHub Release tagged `v<version>` whose assets are named
    `grok-<version>-<os>-<arch>` — the exact names the auto-updater downloads.
@@ -40,8 +41,9 @@ A `workflow_dispatch` run builds the same artifacts without a tag (set
 - **Actions enabled** on the fork, with permission to create releases
   (the workflow uses the built-in `GITHUB_TOKEN` with
   `permissions: contents: write` — no extra secrets are required).
-- ARM Linux builds use the `ubuntu-22.04-arm` hosted runner (available on
-  public repos and paid plans); remove that matrix entry if unavailable.
+- ARM Linux builds require the `ubuntu-22.04-arm` hosted runner (public
+  repos / paid plans only), so that matrix entry is commented out; restore
+  it if the repository becomes public or a self-hosted ARM runner is added.
 
 ## Known limitations
 

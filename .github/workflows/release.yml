@@ -41,9 +41,12 @@ jobs:
           - platform: linux-x86_64
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          - platform: linux-aarch64
-            runner: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
+          # linux-aarch64 is omitted: the hosted `ubuntu-22.04-arm` runner is
+          # not available on private repositories (free plans). Re-add
+          #   - platform: linux-aarch64
+          #     runner: ubuntu-22.04-arm
+          #     target: aarch64-unknown-linux-gnu
+          # if the repo becomes public or a self-hosted ARM runner is added.
           - platform: windows-x86_64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
