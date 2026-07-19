@@ -35,16 +35,8 @@ jobs:
           - platform: macos-aarch64
             runner: macos-14
             target: aarch64-apple-darwin
-          - platform: macos-x86_64
-            runner: macos-13
-            target: x86_64-apple-darwin
-          # Linux builds are omitted: this team only uses macOS and Windows.
-          # To re-add, restore a matrix entry such as
-          #   - platform: linux-x86_64
-          #     runner: ubuntu-22.04
-          #     target: x86_64-unknown-linux-gnu
-          # (linux-aarch64 additionally needs the `ubuntu-22.04-arm` runner,
-          # which is unavailable on private repositories).
+          # macOS Intel (x86_64) omitted: team uses Apple Silicon only.
+          # Linux builds omitted: not needed by this team.
           - platform: windows-x86_64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
@@ -76,10 +68,7 @@ jobs:
         run: |
           case "${{ matrix.platform }}" in
             macos-aarch64) pkg=protoc-29.3-osx-aarch_64.zip; exe=protoc ;;
-            macos-x86_64) pkg=protoc-29.3-osx-x86_64.zip; exe=protoc ;;
             windows-x86_64) pkg=protoc-29.3-win64.zip; exe=protoc.exe ;;
-            linux-x86_64) pkg=protoc-29.3-linux-x86_64.zip; exe=protoc ;;
-            linux-aarch64) pkg=protoc-29.3-linux-aarch_64.zip; exe=protoc ;;
           esac
           # Git Bash tar misreads "D:\..." as a remote host; use a POSIX path
           # for shell operations and keep the native path for cargo's $PROTOC.
