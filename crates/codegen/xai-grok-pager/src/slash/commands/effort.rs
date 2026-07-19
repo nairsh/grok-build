@@ -85,6 +85,7 @@ impl SlashCommand for EffortCommand {
             Ok(effort) => CommandResult::Action(Action::SwitchModel {
                 model_id,
                 effort: Some(effort),
+                service_tier_change: None,
             }),
             Err(err) => CommandResult::Error(err.message()),
         }
@@ -194,7 +195,9 @@ mod tests {
         let mut ctx = dummy_exec_ctx(&state);
         let result = EffortCommand.run(&mut ctx, "high");
         match result {
-            CommandResult::Action(Action::SwitchModel { model_id, effort }) => {
+            CommandResult::Action(Action::SwitchModel {
+                model_id, effort, ..
+            }) => {
                 assert_eq!(model_id, id);
                 assert_eq!(effort, Some(ReasoningEffort::High));
             }
@@ -256,7 +259,9 @@ mod tests {
         let mut ctx = dummy_exec_ctx(&state);
         let result = EffortCommand.run(&mut ctx, "none");
         match result {
-            CommandResult::Action(Action::SwitchModel { model_id, effort }) => {
+            CommandResult::Action(Action::SwitchModel {
+                model_id, effort, ..
+            }) => {
                 assert_eq!(model_id, id);
                 assert_eq!(effort, Some(ReasoningEffort::None));
             }
@@ -281,7 +286,9 @@ mod tests {
         let mut ctx = dummy_exec_ctx(&state);
         // The rendered row inserts the id; `/effort deep` must send `xhigh`.
         match EffortCommand.run(&mut ctx, "deep") {
-            CommandResult::Action(Action::SwitchModel { model_id, effort }) => {
+            CommandResult::Action(Action::SwitchModel {
+                model_id, effort, ..
+            }) => {
                 assert_eq!(model_id, id);
                 assert_eq!(effort, Some(ReasoningEffort::Xhigh));
             }

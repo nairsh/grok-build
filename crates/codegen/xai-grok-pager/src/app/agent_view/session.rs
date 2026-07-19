@@ -200,6 +200,7 @@ impl AgentView {
             terminal_size_stale: false,
             inline_media_hits: InlineMediaHitAreas::default(),
             extensions_modal: None,
+            workflows: Default::default(),
             agents_modal: None,
             persona_detail: None,
             btw_state: None,

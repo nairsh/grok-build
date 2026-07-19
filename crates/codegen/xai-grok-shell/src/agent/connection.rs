@@ -451,13 +451,19 @@ pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
             "HF_TOKEN",
             "moonshotai/Kimi-K2.6",
         ),
-        anthropic_compatible(
-            "fireworks",
-            "Fireworks",
-            "https://api.fireworks.ai/inference/v1",
-            "FIREWORKS_API_KEY",
-            "accounts/fireworks/models/kimi-k2p6",
-        ),
+        ApiKeyProviderPreset {
+            id: "fireworks",
+            display_name: "Fireworks",
+            env_key: "FIREWORKS_API_KEY",
+            default_model: "accounts/fireworks/models/kimi-k2p6",
+            connection: ConnectionConfig {
+                adapter: Some(ApiBackend::Messages),
+                base_url: Some("https://api.fireworks.ai/inference/v1".to_owned()),
+                auth_scheme: Some(AuthScheme::Bearer),
+                credential: CredentialRef::Env(EnvKeys::single("FIREWORKS_API_KEY")),
+                ..Default::default()
+            },
+        },
         openai_compatible(
             "together",
             "Together AI",
@@ -742,6 +748,11 @@ mod tests {
             litellm.connection.base_url.as_deref(),
             Some("http://localhost:4000/v1")
         );
+        let fireworks = api_key_provider_presets()
+            .into_iter()
+            .find(|preset| preset.id == "fireworks")
+            .expect("Fireworks preset should be registered");
+        assert_eq!(fireworks.connection.auth_scheme, Some(AuthScheme::Bearer));
     }
 
     #[derive(Deserialize)]

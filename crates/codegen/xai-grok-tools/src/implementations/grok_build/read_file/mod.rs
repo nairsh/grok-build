@@ -322,6 +322,10 @@ pub(crate) async fn run_read_file(
         }
         Err(_) => (joined_path, None),
     };
+    {
+        let res = resources.lock().await;
+        crate::types::resources::enforce_workflow_filesystem_root(&res, &path)?;
+    }
     let version = ReadFileVersion::from_contract(contract_version);
     let is_legacy = version.is_legacy();
     let is_skill_file = path

@@ -582,6 +582,7 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -626,6 +627,7 @@ fn switch_model_complete_skips_message_and_persist_when_unchanged() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -680,6 +682,7 @@ fn switch_model_complete_persists_resolved_effort_from_catalog_meta() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None, // user typed `/model Blackbox 4.7` with no effort
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -746,6 +749,7 @@ fn switch_to_non_reasoning_model_clears_persisted_effort() {
             agent_id: id,
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -790,6 +794,7 @@ fn switch_model_complete_failure_pushes_error_and_clears_pending() {
             agent_id: id,
             model_id,
             effort: None,
+            service_tier_change: None,
             result: Err(SwitchModelError::Other("model not found".into())),
             prev_model_id: None,
         }),
@@ -830,6 +835,7 @@ fn switch_model_incompatible_agent_shows_question_modal() {
             agent_id: id,
             model_id,
             effort: None,
+            service_tier_change: None,
             result: Err(SwitchModelError::IncompatibleAgent {
                 error: err,
                 prev_model_id: None,
@@ -893,6 +899,7 @@ fn incompatible_agent_rollback_restores_previous_model() {
             agent_id: id,
             model_id: new_model,
             effort: None,
+            service_tier_change: None,
             result: Err(SwitchModelError::IncompatibleAgent {
                 error: err,
                 prev_model_id: Some(prev_model.clone()),
@@ -939,6 +946,7 @@ fn incompatible_agent_closes_active_modal() {
             agent_id: id,
             model_id,
             effort: None,
+            service_tier_change: None,
             result: Err(SwitchModelError::IncompatibleAgent {
                 error: err,
                 prev_model_id: None,
@@ -988,6 +996,7 @@ fn same_agent_type_switch_no_modal() {
             agent_id: id,
             model_id: model_b.clone(),
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),
@@ -1020,6 +1029,7 @@ fn switch_model_pending_lifecycle() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -1031,6 +1041,7 @@ fn switch_model_pending_lifecycle() {
             agent_id: id,
             model_id,
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),

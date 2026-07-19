@@ -229,6 +229,7 @@ fn build_permission_display(
     bash_highlights: Option<&BashCommandHighlights>,
 ) -> (String, Vec<String>, Option<String>) {
     let is_bash = bash_highlights.is_some();
+    let workflow_input = workflow_input(req);
 
     let bash_input = req.tool_call.fields.raw_input.as_ref().and_then(|v| {
         serde_json::from_value::<xai_grok_tools::implementations::BashToolInput>(v.clone()).ok()
@@ -250,7 +251,9 @@ fn build_permission_display(
         || req.tool_call.fields.kind == Some(acp::ToolKind::Execute)
         || raw_command.is_some();
 
-    let title = if is_execute {
+    let title = if workflow_input.is_some() {
+        "Approve Dynamic Workflow?".to_string()
+    } else if is_execute {
         bash_description
             .as_deref()
             .map(str::trim)
@@ -294,9 +297,94 @@ fn build_permission_display(
         }
     };
 
-    let description = mcp_args_lines(req);
+    let description = workflow_input
+        .map(workflow_preview_lines)
+        .unwrap_or_else(|| mcp_args_lines(req));
     let bash_cmd = if is_execute { raw_command } else { None };
     (title, description, bash_cmd)
+}
+
+/// Extract a workflow payload from either a direct built-in tool input or the
+/// generic `UseTool` wrapper used by dynamically registered tools.
+fn workflow_input(req: &acp::RequestPermissionRequest) -> Option<&serde_json::Value> {
+    let raw = req.tool_call.fields.raw_input.as_ref()?;
+    let payload = raw.get("tool_input").unwrap_or(raw);
+    let looks_like_workflow = payload.get("approval_hash").is_some()
+        && (payload.get("script").is_some() || payload.get("saved_workflow").is_some());
+    looks_like_workflow.then_some(payload)
+}
+
+fn workflow_preview_lines(input: &serde_json::Value) -> Vec<String> {
+    let script = input
+        .get("script")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let saved = input
+        .get("saved_workflow")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty());
+    let approval = input
+        .get("approval_hash")
+        .and_then(|value| value.as_str())
+        .unwrap_or("missing");
+    let mut lines = vec![
+        format!(
+            "Source: {}",
+            saved
+                .map(|name| format!("saved workflow `{name}`"))
+                .unwrap_or_else(|| "inline script".into())
+        ),
+        format!("Approval: {}", &approval[..approval.len().min(24)]),
+        format!(
+            "Limits: {} concurrent · {} agents · {}s timeout",
+            input
+                .get("max_concurrency")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(4),
+            input
+                .get("max_agents")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(256),
+            input
+                .get("timeout_seconds")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(3600),
+        ),
+        format!(
+            "Budget: {} · {}",
+            input
+                .get("max_tokens")
+                .and_then(|value| value.as_u64())
+                .map(|tokens| format!("{tokens} tokens"))
+                .unwrap_or_else(|| "no token cap".into()),
+            if input
+                .get("run_in_background")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                "background"
+            } else {
+                "foreground"
+            }
+        ),
+        format!(
+            "Write workers: {}",
+            if script.contains("mode: \"write\"") || script.contains("mode: 'write'") {
+                "requested (isolated worktrees)"
+            } else {
+                "none"
+            }
+        ),
+    ];
+    if !script.is_empty() {
+        lines.push(format!("Script: {} bytes", script.len()));
+        lines.push("────────────────────────".into());
+        lines.extend(script.lines().take(40).map(str::to_owned));
+        if script.lines().count() > 40 {
+            lines.push("… Ctrl-F to expand the full planned input".into());
+        }
+    }
+    lines
 }
 
 /// Maximum stored lines for the MCP planned-arguments display. The overlay

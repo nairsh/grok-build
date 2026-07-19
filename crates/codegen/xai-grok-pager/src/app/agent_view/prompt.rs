@@ -763,9 +763,16 @@ impl AgentView {
         // handling the Esc, a following `d` is the user's text, not a dump.
         self.esc_pressed_at = None;
 
-        // Mid-turn running: swallow Esc (do not cancel or arm clear/rewind).
+        // Mid-turn running: require a second Esc before cancelling. This keeps
+        // an accidental Esc harmless while providing the familiar double-Esc
+        // interrupt without clearing a draft in the composer.
         if self.session.state.is_turn_running() {
-            return Some(InputOutcome::Changed);
+            return Some(InputOutcome::ArmPending {
+                action: Action::CancelTurn,
+                shortcut: crate::input::key::KeyShortcut::from(*key),
+                label: Some("stop"),
+                ttl: crate::app::app_view::esc_double_press_ttl(),
+            });
         }
         // Stuck cancel: re-send CancelTurn (Ctrl+C escalates to Quit instead).
         if self.session.state.is_cancelling() {

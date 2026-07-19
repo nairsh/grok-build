@@ -35,7 +35,8 @@ directly to a provider with `atlas login openrouter`. From a running session,
 intact. It shows whether each provider has a saved key, subscription login, or
 environment key (without displaying the secret). Press `Enter` to run that
 provider's setup flow, `d` to remove a saved credential, and `r` to refresh
-the status. Built-in xAI account sessions continue to use `/logout`.
+the status. `/logout` opens the same window in a removal-only view, containing
+only saved credentials.
 
 For API keys, Atlas hides the key while you type, suggests the provider's
 current default model, stores the secret in `~/.grok/credentials.json`, and adds
@@ -91,6 +92,10 @@ default, and `/login litellm` lets you override it). When adding LiteLLM or anot
 Atlas attempts `GET /models` using the entered key and saves all returned model
 ids for that connection. If a gateway disables model listing, setup falls back
 to a manually entered model id.
+
+OpenRouter intentionally does not fetch its full public catalog. Its setup form
+accepts a comma-separated list of the exact model ids you want to enable, and
+adds only those models to `/model`.
 
 A user-defined `[connection.<id>]` with the same id fully overrides the built-in
 (e.g. to route through a proxy).

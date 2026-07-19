@@ -448,6 +448,7 @@ pub struct FinalizedToolset {
     pub resources: SharedResources,
     resources_persistence: Arc<ResourcesPersistence>,
     scheduler_cancel: Option<tokio_util::sync::CancellationToken>,
+    workflow_cancel: Option<tokio_util::sync::CancellationToken>,
     /// Shared local registry for in-process dispatch.
     /// Contains only config-enabled tools. Can be shared with ToolHarness.
     local_registry: xai_computer_hub_sdk::LocalRegistry,
@@ -676,6 +677,9 @@ impl ToolRegistryBuilder {
         b.register::<grok_build::GetTerminalCommandOutputTool>();
         b.register::<grok_build::WaitTasksTool>();
         b.register::<grok_build::TaskTool>();
+        b.register::<grok_build::WorkflowTool>();
+        b.register::<grok_build::WorkflowPreviewTool>();
+        b.register::<grok_build::WorkflowActionTool>();
         b.register::<grok_build::WebSearchTool>();
         b.register_with_params::<grok_build::WebFetchTool, grok_build::web_fetch::WebFetchParams>();
         b.register::<grok_build::LspTool>();
@@ -968,12 +972,14 @@ impl ToolRegistryBuilder {
         resources.insert(crate::types::resources::FileSystem(ctx.fs));
         let cwd = ctx.cwd;
         resources.insert(crate::types::resources::Cwd(cwd.clone()));
+        let session_folder = ctx.session_folder.clone();
         resources.insert(crate::types::resources::SessionFolder(ctx.session_folder));
         resources.insert(crate::types::resources::SessionEnv(ctx.session_env));
         if let Some(owner_session_id) = ctx.owner_session_id {
             resources.insert(crate::types::resources::OwnerSessionId(owner_session_id));
         }
         let scheduler_notification_handle = ctx.notification_handle.clone();
+        let workflow_notification_handle = ctx.notification_handle.clone();
         resources.insert(crate::types::resources::NotificationHandle(
             ctx.notification_handle,
         ));
@@ -1181,6 +1187,22 @@ impl ToolRegistryBuilder {
                 );
                 (Some(scheduler_cmd_rx), Some(cancel_token))
             };
+        let workflow_cancel_token = tools
+            .iter()
+            .any(|tool| {
+                tool.id.rsplit(':').next().unwrap_or(&tool.id)
+                    == crate::implementations::grok_build::workflow::WORKFLOW_TOOL_NAME
+            })
+            .then(tokio_util::sync::CancellationToken::new);
+        if let Some(cancel_token) = &workflow_cancel_token {
+            let workflow_handle =
+                crate::implementations::grok_build::workflow::supervisor::WorkflowSupervisor::start(
+                    session_folder.join("workflows"),
+                    workflow_notification_handle,
+                    cancel_token.clone(),
+                );
+            resources.insert(workflow_handle);
+        }
         let shared_resources = resources.into_shared();
         if let (Some(cmd_rx), Some(cancel_token)) = (scheduler_cmd_rx, &scheduler_cancel_token) {
             let actor = crate::implementations::grok_build::scheduler::actor::SchedulerActor {
@@ -1197,6 +1219,7 @@ impl ToolRegistryBuilder {
             resources: shared_resources,
             resources_persistence: persistence,
             scheduler_cancel: scheduler_cancel_token,
+            workflow_cancel: workflow_cancel_token,
             local_registry,
             renderer: renderer_arc,
             system_reminder_tag: ctx.system_reminder_tag,
@@ -1207,6 +1230,9 @@ impl ToolRegistryBuilder {
 impl Drop for FinalizedToolset {
     fn drop(&mut self) {
         if let Some(cancel) = self.scheduler_cancel.take() {
+            cancel.cancel();
+        }
+        if let Some(cancel) = self.workflow_cancel.take() {
             cancel.cancel();
         }
     }
@@ -1262,6 +1288,7 @@ impl FinalizedToolset {
             )),
             resources_persistence: Arc::new(ResourcesPersistence::noop()),
             scheduler_cancel: None,
+            workflow_cancel: None,
             local_registry: xai_computer_hub_sdk::LocalRegistry::new(),
             renderer: Arc::new(TemplateRenderer::new(
                 std::collections::HashMap::new(),

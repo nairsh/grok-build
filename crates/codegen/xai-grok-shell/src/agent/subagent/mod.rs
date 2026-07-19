@@ -1713,6 +1713,96 @@ fn resolve_subagent_toolset(
         definition.override_file_tools(file_tools.clone());
     }
 }
+
+/// Build the exact leaf profile used by dynamic-workflow workers.
+///
+/// This deliberately bypasses project/user agent discovery so a shadowing
+/// `explore` definition cannot widen the workflow sandbox. The explicit
+/// retain is a fail-closed guard against future changes to the built-in
+/// Explore profile.
+fn strict_workflow_definition(allow_write: bool) -> xai_grok_agent::config::AgentDefinition {
+    use xai_grok_agent::config::{BuiltinAgentName, McpInheritance};
+    use xai_grok_tools::types::tool::ToolKind;
+
+    let mut definition = BuiltinAgentName::Explore.definition();
+    definition.tool_config.tools.retain(|tool| match tool.kind {
+        Some(ToolKind::Read | ToolKind::List | ToolKind::ListDir | ToolKind::Search) => true,
+        Some(ToolKind::Edit | ToolKind::Write) => allow_write,
+        _ => false,
+    });
+    if allow_write {
+        definition
+            .tool_config
+            .tools
+            .push((&xai_grok_tools::implementations::grok_build::SearchReplaceTool).into());
+    }
+    definition.inject_default_tools = false;
+    definition.capability_mode = Some(if allow_write {
+        xai_tool_types::SubagentCapabilityMode::ReadWrite
+    } else {
+        xai_tool_types::SubagentCapabilityMode::ReadOnly
+    });
+    definition.agents_md = false;
+    definition.discover_skills = false;
+    definition.inherit_skills = false;
+    definition.skills.clear();
+    definition.tools.clear();
+    definition.disallowed_tools.clear();
+    definition.allowed_subagent_types = Some(Vec::new());
+    definition.mcp_servers.clear();
+    definition.mcp_inheritance = McpInheritance::None;
+    definition.hooks = None;
+    definition.memory = None;
+    definition.completion_requirement = None;
+    definition
+}
+
+/// Remove every inherited side channel that is not needed by a workflow's
+/// exact read/list/search leaf profile.
+fn clamp_strict_workflow_context(ctx: &mut SubagentSpawnContext, allow_write: bool) {
+    ctx.yolo_mode = false;
+    ctx.lsp = None;
+    ctx.client_hooks.clear();
+    ctx.hook_registry = None;
+    ctx.memory_config = None;
+    ctx.web_search_sampling_config = None;
+    ctx.disable_web_search = true;
+    ctx.web_fetch_config = Default::default();
+    ctx.image_gen_config = Default::default();
+    ctx.video_gen_config = Default::default();
+    ctx.app_builder_deployer_config = Default::default();
+    ctx.write_file_enabled = allow_write;
+    ctx.goal_enabled = false;
+    ctx.ask_user_question_enabled = false;
+    ctx.backend_tools_enabled = false;
+    ctx.subagent_roles.clear();
+    ctx.subagent_personas.clear();
+    ctx.persona_io_summaries.clear();
+    ctx.file_tool_overrides = None;
+    ctx.agent_config = None;
+    ctx.plugin_registry = None;
+    ctx.parent_mcp_configs.clear();
+    ctx.parent_mcp_pool = None;
+    ctx.parent_tool_snapshot = None;
+    ctx.managed_mcp_state = Default::default();
+    ctx.managed_mcp_proxy_base_url.clear();
+    ctx.parent_skills = None;
+    ctx.parent_skills_config = Default::default();
+    ctx.parent_terminal_backend = None;
+    ctx.parent_notification_handle = None;
+    ctx.parent_scheduler_handle = None;
+    ctx.session_env = Arc::new(HashMap::new());
+    ctx.api_key_provider = None;
+    ctx.gcs_bucket_url = None;
+    ctx.gcs_upload_method = None;
+    ctx.auto_wake_delivered = None;
+    ctx.synthetic_trace_tx = None;
+    ctx.auto_wake_enabled = false;
+    ctx.todo_gate = false;
+    ctx.remote_settings = None;
+    ctx.laziness_debug_log = None;
+}
+
 /// Map a resolved `ToolServerConfig` into a [`SubagentTypeSummary`].
 ///
 /// Keys on each entry's `ToolConfig.kind` (first tool per kind wins).
@@ -1948,6 +2038,9 @@ fn cancellation_error_message(
 /// `parent_channel_open` folds `inject_subagent_completed_prompt`'s own
 /// no-channel bail into the decision, so the `will_wake` stamped on the
 /// completion notification can never promise a wake the inject won't do.
+/// Harness-internal children set `surface_completion` to false so their
+/// results stay on their owning control path instead of becoming parent
+/// prompts.
 ///
 /// `cancelled` results never wake: a child dies cancelled because the user
 /// (or parent teardown) killed it — most acutely the Ctrl+C race where
@@ -1957,6 +2050,7 @@ fn cancellation_error_message(
 /// still recorded, so reminder/drain surfaces can report it later.
 fn should_auto_wake_subagent(
     run_in_background: bool,
+    surface_completion: bool,
     cancelled: bool,
     auto_wake_enabled: bool,
     block_waited: bool,
@@ -1965,6 +2059,7 @@ fn should_auto_wake_subagent(
     parent_channel_open: bool,
 ) -> bool {
     run_in_background
+        && surface_completion
         && !cancelled
         && auto_wake_enabled
         && !block_waited

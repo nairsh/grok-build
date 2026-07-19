@@ -601,6 +601,7 @@ impl ChannelSpawner {
         let request = SubagentRequest {
             id: id.to_string(),
             prompt,
+            json_schema: None,
             description: GOAL_CLASSIFIER_SUBAGENT_DESCRIPTION.to_string(),
             subagent_type: GOAL_CLASSIFIER_SUBAGENT_TYPE.to_string(),
             parent_session_id: self.parent_session_id.clone(),
@@ -616,6 +617,8 @@ impl ChannelSpawner {
             // Harness-internal: never surface to the model's idle reminder.
             surface_completion: false,
             fork_context: false,
+            strict_read_only: false,
+            strict_workflow_write: false,
             result_tx,
         };
         if self

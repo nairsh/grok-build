@@ -1,3 +1,8 @@
 /target
 **/*.rs.bk
 .DS_Store
+# macOS AppleDouble metadata files (created on non-HFS volumes)
+._*
+**/._*
+# Local Atlas session state in this checkout
+/.grok/

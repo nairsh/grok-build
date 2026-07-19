@@ -19,7 +19,8 @@ const TITLE: &str = "Providers & login";
 
 #[derive(Debug, Clone)]
 enum EntryKind {
-    Header,
+    Header { logged_in: bool },
+    XaiSession,
     Provider { provider: String },
     SavedCredential { credential_id: String },
 }
@@ -30,20 +31,22 @@ struct Entry {
     status: String,
     kind: EntryKind,
     credential_id: Option<String>,
+    connected: bool,
 }
 
 impl Entry {
-    fn header(label: impl Into<String>) -> Self {
+    fn header(label: impl Into<String>, logged_in: bool) -> Self {
         Self {
             label: label.into(),
             status: String::new(),
-            kind: EntryKind::Header,
+            kind: EntryKind::Header { logged_in },
             credential_id: None,
+            connected: false,
         }
     }
 
     fn selectable(&self) -> bool {
-        !matches!(self.kind, EntryKind::Header)
+        !matches!(&self.kind, EntryKind::Header { .. })
     }
 }
 
@@ -52,7 +55,23 @@ enum Mode {
     Browse,
     ApiKey(ApiKeyForm),
     WaitingForBrowser { provider: String },
-    ConfirmLogout { credential_id: String },
+    RemovingXaiSession,
+    ConfirmLogout { target: LogoutTarget },
+}
+
+#[derive(Debug, Clone)]
+enum LogoutTarget {
+    XaiSession,
+    SavedCredential { credential_id: String },
+}
+
+impl LogoutTarget {
+    fn label(&self) -> &str {
+        match self {
+            Self::XaiSession => "xAI / Grok",
+            Self::SavedCredential { credential_id } => credential_id,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +84,11 @@ struct ApiKeyForm {
     /// Full catalog returned by the endpoint's OpenAI-compatible `/models`
     /// resource. It is saved with the connection so `/model` can use it.
     models: Vec<String>,
+    /// Fixed endpoint used for model discovery by built-in providers. Custom
+    /// and LiteLLM connections use their editable `base_url` instead.
+    model_discovery_url: Option<String>,
     discovering_models: bool,
+    discovery_request_id: Option<u64>,
     /// Only shown if `/models` is unavailable. Normal LiteLLM/custom setup
     /// never asks the user to know a model identifier.
     manual_model_entry: bool,
@@ -77,15 +100,26 @@ impl ApiKeyForm {
         let preset = xai_grok_shell::agent::connection::api_key_provider_presets()
             .into_iter()
             .find(|preset| preset.id == provider);
-        let (connection_name, base_url, model) = match preset {
+        let (connection_name, base_url, model, model_discovery_url) = match preset {
             Some(preset) => (
                 provider.clone(),
-                (provider == "litellm").then(|| preset.connection.base_url.unwrap_or_default()),
-                (provider != "litellm")
+                (provider == "litellm")
+                    .then(|| preset.connection.base_url.clone().unwrap_or_default()),
+                (provider != "litellm" && provider != "openrouter")
                     .then(|| preset.default_model.to_owned())
                     .unwrap_or_default(),
+                // OpenRouter's public catalog is huge. Let the user opt in to
+                // only the model ids they want instead of importing it all.
+                (provider != "openrouter")
+                    .then(|| preset.connection.base_url.clone())
+                    .flatten(),
             ),
-            None => ("custom".to_owned(), Some(String::new()), String::new()),
+            None => (
+                "custom".to_owned(),
+                Some(String::new()),
+                String::new(),
+                None,
+            ),
         };
         Self {
             provider,
@@ -94,7 +128,9 @@ impl ApiKeyForm {
             api_key: String::new(),
             model,
             models: Vec::new(),
+            model_discovery_url,
             discovering_models: false,
+            discovery_request_id: None,
             manual_model_entry: false,
             field: 0,
         }
@@ -122,12 +158,28 @@ impl ApiKeyForm {
         }
     }
 
+    fn invalidate_model_discovery(&mut self) {
+        self.discovering_models = false;
+        self.discovery_request_id = None;
+    }
+
     fn model_field(&self) -> Option<usize> {
         self.needs_model_field().then(|| self.field_count() - 1)
     }
 
+    fn model_discovery_base_url(&self) -> Option<&str> {
+        self.base_url
+            .as_deref()
+            .or(self.model_discovery_url.as_deref())
+    }
+
     fn models_to_save(&self) -> Vec<String> {
-        let selected = self.model.trim();
+        let selected = self
+            .model
+            .split(',')
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .collect::<Vec<_>>();
         let mut models = self
             .models
             .iter()
@@ -135,11 +187,11 @@ impl ApiKeyForm {
             .filter(|model| !model.is_empty())
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        if !selected.is_empty() {
-            models.retain(|model| model != selected);
-            // The selected model remains the default while every discovered
-            // model stays available in `/model`.
-            models.insert(0, selected.to_owned());
+        for model in selected.into_iter().rev() {
+            models.retain(|saved| saved != model);
+            // The first manually-entered model remains the default while any
+            // additional ids become selectable through `/model`.
+            models.insert(0, model.to_owned());
         }
         models
     }
@@ -168,6 +220,8 @@ pub struct ProviderLoginModalState {
     scroll: usize,
     mode: Mode,
     notice: Option<String>,
+    next_discovery_request_id: u64,
+    logout_only: bool,
 }
 
 impl ProviderLoginModalState {
@@ -175,11 +229,13 @@ impl ProviderLoginModalState {
         let mut state = Self {
             window: ModalWindowState::new(),
             content_area: None,
-            entries: build_entries(),
+            entries: build_entries(false),
             selected: 0,
             scroll: 0,
             mode: Mode::Browse,
             notice: None,
+            next_discovery_request_id: 0,
+            logout_only: false,
         };
         if let Some(provider) = preselected_provider {
             if let Some(index) = state.entries.iter().position(|entry| {
@@ -192,34 +248,48 @@ impl ProviderLoginModalState {
         state
     }
 
+    /// Build the `/logout` view: only credentials that can actually be
+    /// removed are shown, rather than presenting a misleading generic logout.
+    pub fn new_logout() -> Self {
+        let mut state = Self::new(None);
+        state.logout_only = true;
+        state.entries = build_entries(true);
+        state.selected = 0;
+        state.move_to_selectable(1);
+        state
+    }
+
     pub fn refresh(&mut self) {
         let selected_provider = self.selected_entry().and_then(|entry| match &entry.kind {
             EntryKind::Provider { provider } => Some(provider.clone()),
             EntryKind::SavedCredential { credential_id } => Some(credential_id.clone()),
-            EntryKind::Header => None,
+            EntryKind::XaiSession => Some("xai".to_owned()),
+            EntryKind::Header { .. } => None,
         });
-        self.entries = build_entries();
+        self.entries = build_entries(self.logout_only);
         self.selected = selected_provider
             .and_then(|needle| {
                 self.entries.iter().position(|entry| match &entry.kind {
                     EntryKind::Provider { provider } => provider == &needle,
                     EntryKind::SavedCredential { credential_id } => credential_id == &needle,
-                    EntryKind::Header => false,
+                    EntryKind::XaiSession => needle == "xai",
+                    EntryKind::Header { .. } => false,
                 })
             })
             .unwrap_or(0);
         self.move_to_selectable(1);
     }
 
-    /// Start a native model discovery request. This only applies to LiteLLM
-    /// and custom OpenAI-compatible connections, which have an editable base
-    /// URL. The actual HTTP request runs as an async app effect.
+    /// Start a native model discovery request. Built-in OpenAI-compatible
+    /// providers use their fixed endpoint; LiteLLM and custom connections use
+    /// the editable base URL. The actual HTTP request runs as an async app
+    /// effect.
     fn start_model_discovery(&mut self) -> Result<(), String> {
         let Mode::ApiKey(form) = &mut self.mode else {
             return Err("Open an API-key connection first.".to_owned());
         };
-        let Some(base_url) = form.base_url.as_deref() else {
-            return Err("This provider does not expose a custom /models endpoint.".to_owned());
+        let Some(base_url) = form.model_discovery_base_url() else {
+            return Err("This provider does not expose a /models endpoint.".to_owned());
         };
         if base_url.trim().is_empty() {
             return Err("Enter an API base URL before loading models.".to_owned());
@@ -230,36 +300,53 @@ impl ProviderLoginModalState {
         if form.discovering_models {
             return Err("Models are already loading.".to_owned());
         }
+        self.next_discovery_request_id = self.next_discovery_request_id.wrapping_add(1).max(1);
         form.discovering_models = true;
+        form.discovery_request_id = Some(self.next_discovery_request_id);
         self.notice = Some("Loading models from the endpoint…".to_owned());
         Ok(())
     }
 
     /// Return the transient credentials for the in-flight discovery effect.
     /// They are never rendered or persisted until the user saves the form.
-    pub fn model_discovery_credentials(&self) -> Option<(String, String)> {
+    pub fn model_discovery_credentials(&self) -> Option<(u64, String, String)> {
         let Mode::ApiKey(form) = &self.mode else {
             return None;
         };
         if !form.discovering_models {
             return None;
         }
-        let base_url = form.base_url.as_deref()?.trim().trim_end_matches('/');
-        (!base_url.is_empty() && !form.api_key.trim().is_empty())
-            .then(|| (base_url.to_owned(), form.api_key.trim().to_owned()))
+        let request_id = form.discovery_request_id?;
+        let base_url = form
+            .model_discovery_base_url()?
+            .trim()
+            .trim_end_matches('/');
+        (!base_url.is_empty() && !form.api_key.trim().is_empty()).then(|| {
+            (
+                request_id,
+                base_url.to_owned(),
+                form.api_key.trim().to_owned(),
+            )
+        })
     }
 
     /// Apply a `/models` response to the focused form. The first discovered
     /// model becomes the default; all results are retained for `/model`.
-    pub fn finish_model_discovery(&mut self, result: Result<&[String], &str>) {
+    pub fn finish_model_discovery(&mut self, request_id: u64, result: Result<&[String], &str>) {
         let Mode::ApiKey(form) = &mut self.mode else {
             return;
         };
+        if form.discovery_request_id != Some(request_id) {
+            return;
+        }
         form.discovering_models = false;
+        form.discovery_request_id = None;
         match result {
             Ok(models) if !models.is_empty() => {
                 form.models = models.to_vec();
-                form.model = form.models[0].clone();
+                if !form.models.iter().any(|model| model == &form.model) {
+                    form.model = form.models[0].clone();
+                }
                 self.notice = Some(format!("Loaded {} models from /models.", form.models.len()));
             }
             Ok(_) => {
@@ -327,30 +414,30 @@ impl ProviderLoginModalState {
     }
 
     fn logout_selected(&mut self) {
-        let Some(credential_id) = self
-            .selected_entry()
-            .and_then(|entry| entry.credential_id.clone())
-        else {
-            self.notice = Some(
-                "This connection is not a saved credential. Remove its environment variable in your shell."
-                    .to_owned(),
-            );
-            return;
-        };
-        self.mode = Mode::ConfirmLogout { credential_id };
+        let target = self.selected_entry().and_then(|entry| match &entry.kind {
+            EntryKind::XaiSession => Some(LogoutTarget::XaiSession),
+            EntryKind::Provider { .. } | EntryKind::SavedCredential { .. } => entry
+                .credential_id
+                .as_ref()
+                .map(|credential_id| LogoutTarget::SavedCredential {
+                    credential_id: credential_id.clone(),
+                }),
+            EntryKind::Header { .. } => None,
+        });
+        match target {
+            Some(target) => self.mode = Mode::ConfirmLogout { target },
+            None => {
+                self.notice = Some(
+                    "This provider uses an environment variable. Remove it from your shell to disconnect."
+                        .to_owned(),
+                );
+            }
+        }
     }
 
     fn remove_credential(&mut self, credential_id: &str) {
-        let path = xai_grok_shell::agent::credential_store::CredentialStore::default_path();
-        let result = (|| -> anyhow::Result<()> {
-            let mut store = xai_grok_shell::agent::credential_store::CredentialStore::load(&path)?;
-            anyhow::ensure!(
-                store.remove(credential_id).is_some(),
-                "credential no longer exists"
-            );
-            store.save(&path)?;
-            Ok(())
-        })();
+        let result =
+            xai_grok_shell::agent::login_interactive::remove_saved_credential(credential_id);
         match result {
             Ok(()) => {
                 self.notice = Some(format!(
@@ -365,14 +452,132 @@ impl ProviderLoginModalState {
             }
         }
     }
+
+    /// Finish removal of the first-party session after the ACP agent confirms
+    /// it. Keeping the modal open lets the user continue managing other keys.
+    pub fn finish_xai_logout(&mut self, result: Result<(), &str>) {
+        self.mode = Mode::Browse;
+        self.refresh();
+        self.notice = Some(match result {
+            Ok(()) => "Logged out of xAI / Grok.".to_owned(),
+            Err(error) => format!("Could not log out of xAI / Grok: {error}"),
+        });
+    }
 }
 
-fn build_entries() -> Vec<Entry> {
+fn build_entries(logout_only: bool) -> Vec<Entry> {
     use xai_grok_shell::agent::credential_store::{Credential, CredentialStore};
 
     let path = CredentialStore::default_path();
     let store = CredentialStore::load(&path).unwrap_or_default();
-    let mut entries = vec![Entry::header("Subscriptions")];
+    let xai_session =
+        xai_grok_shell::auth::read_auth_json(&xai_grok_config::grok_home().join("auth.json"))
+            .ok()
+            .and_then(|store| {
+                xai_grok_shell::auth::lookup_auth(
+                    &store,
+                    &xai_grok_shell::auth::GrokComConfig::default().auth_scope(),
+                )
+            })
+            .is_some();
+
+    let presets = xai_grok_shell::agent::connection::api_key_provider_presets();
+    let known_ids: std::collections::HashSet<&str> = presets
+        .iter()
+        .map(|preset| preset.id)
+        .chain(["anthropic", "openai-codex", "github-copilot"])
+        .collect();
+
+    let mut connected = Vec::new();
+    if xai_session {
+        connected.push(Entry {
+            label: "xAI / Grok".to_owned(),
+            status: "Logged in".to_owned(),
+            kind: EntryKind::XaiSession,
+            credential_id: None,
+            connected: true,
+        });
+    }
+    for (provider, label, credential_id) in [
+        (
+            "anthropic-subscription",
+            "Claude Pro / Max",
+            Some("anthropic"),
+        ),
+        (
+            "openai-codex",
+            "ChatGPT Plus / Pro (Codex)",
+            Some("openai-codex"),
+        ),
+        ("github-copilot", "GitHub Copilot", Some("github-copilot")),
+    ] {
+        if let Some(credential_id) = credential_id
+            && let Some(credential) = store.get(credential_id)
+        {
+            let status = match credential {
+                Credential::Oauth { .. } => "Logged in".to_owned(),
+                Credential::ApiKey { .. } => "Saved API key".to_owned(),
+            };
+            connected.push(Entry {
+                label: label.to_owned(),
+                status,
+                kind: EntryKind::Provider {
+                    provider: provider.to_owned(),
+                },
+                credential_id: Some(credential_id.to_owned()),
+                connected: true,
+            });
+        }
+    }
+    for preset in &presets {
+        if let Some(credential) = store.get(preset.id) {
+            let status = match credential {
+                Credential::ApiKey { .. } => "Saved API key".to_owned(),
+                Credential::Oauth { .. } => "Saved credential".to_owned(),
+            };
+            connected.push(Entry {
+                label: preset.display_name.to_owned(),
+                status,
+                kind: EntryKind::Provider {
+                    provider: preset.id.to_owned(),
+                },
+                credential_id: Some(preset.id.to_owned()),
+                connected: true,
+            });
+        }
+    }
+    for credential_id in store
+        .ids()
+        .filter(|id| !known_ids.contains(*id))
+        .map(str::to_owned)
+    {
+        let status = match store.get(&credential_id) {
+            Some(Credential::ApiKey { .. }) => "Saved API key".to_owned(),
+            Some(Credential::Oauth { .. }) => "Logged in".to_owned(),
+            None => continue,
+        };
+        connected.push(Entry {
+            label: credential_id.clone(),
+            status,
+            kind: EntryKind::SavedCredential {
+                credential_id: credential_id.clone(),
+            },
+            credential_id: Some(credential_id),
+            connected: true,
+        });
+    }
+
+    let mut entries = vec![Entry::header("Logged in", true)];
+    if connected.is_empty() {
+        entries.push(Entry::header("No saved provider credentials.", false));
+    } else {
+        entries.extend(connected);
+    }
+    if logout_only {
+        return entries;
+    }
+
+    entries.push(Entry::header("Other providers", false));
     for (provider, label, credential_id) in [
         ("xai", "xAI / Grok", None),
         (
@@ -387,51 +592,39 @@ fn build_entries() -> Vec<Entry> {
         ),
         ("github-copilot", "GitHub Copilot", Some("github-copilot")),
     ] {
-        let credential = credential_id.and_then(|id| store.get(id));
-        let status = match credential {
-            Some(Credential::Oauth { .. }) => "Logged in".to_owned(),
-            Some(Credential::ApiKey { .. }) => "Saved API key".to_owned(),
-            None if provider == "xai"
-                && xai_grok_shell::agent::auth_method::has_xai_api_key_env() =>
-            {
-                "Environment key (XAI_API_KEY)".to_owned()
-            }
-            None if provider == "xai" => "Use /logout to manage account session".to_owned(),
-            None => "Not connected".to_owned(),
-        };
-        entries.push(Entry {
-            label: label.to_owned(),
-            status,
-            kind: EntryKind::Provider {
-                provider: provider.to_owned(),
-            },
-            credential_id: credential
-                .is_some()
-                .then(|| credential_id.unwrap().to_owned()),
-        });
+        let already_connected = (provider == "xai" && xai_session)
+            || credential_id.is_some_and(|id| store.get(id).is_some());
+        if !already_connected {
+            entries.push(Entry {
+                label: label.to_owned(),
+                status: "Subscription".to_owned(),
+                kind: EntryKind::Provider {
+                    provider: provider.to_owned(),
+                },
+                credential_id: None,
+                connected: false,
+            });
+        }
     }
-
-    entries.push(Entry::header("API-key providers"));
-    let presets = xai_grok_shell::agent::connection::api_key_provider_presets();
-    for preset in &presets {
-        let credential = store.get(preset.id);
-        let env_set = std::env::var(preset.env_key)
-            .ok()
-            .is_some_and(|value| !value.trim().is_empty());
-        let status = match credential {
-            Some(Credential::ApiKey { .. }) => "Saved API key".to_owned(),
-            Some(Credential::Oauth { .. }) => "Saved credential".to_owned(),
-            None if env_set => format!("Environment key ({})", preset.env_key),
-            None => "Not connected".to_owned(),
-        };
-        entries.push(Entry {
-            label: preset.display_name.to_owned(),
-            status,
-            kind: EntryKind::Provider {
-                provider: preset.id.to_owned(),
-            },
-            credential_id: credential.is_some().then(|| preset.id.to_owned()),
-        });
+    for preset in presets {
+        if store.get(preset.id).is_none() {
+            let env_set = std::env::var(preset.env_key)
+                .ok()
+                .is_some_and(|value| !value.trim().is_empty());
+            entries.push(Entry {
+                label: preset.display_name.to_owned(),
+                status: if env_set {
+                    format!("Environment key ({})", preset.env_key)
+                } else {
+                    "API key".to_owned()
+                },
+                kind: EntryKind::Provider {
+                    provider: preset.id.to_owned(),
+                },
+                credential_id: None,
+                connected: false,
+            });
+        }
     }
     entries.push(Entry {
         label: "Custom OpenAI-compatible endpoint".to_owned(),
@@ -440,36 +633,8 @@ fn build_entries() -> Vec<Entry> {
             provider: "custom".to_owned(),
         },
         credential_id: None,
+        connected: false,
     });
-
-    let known_ids: std::collections::HashSet<&str> = presets
-        .iter()
-        .map(|preset| preset.id)
-        .chain(["anthropic", "openai-codex", "github-copilot"])
-        .collect();
-    let saved: Vec<_> = store
-        .ids()
-        .filter(|id| !known_ids.contains(*id))
-        .map(str::to_owned)
-        .collect();
-    if !saved.is_empty() {
-        entries.push(Entry::header("Saved custom credentials"));
-        for credential_id in saved {
-            let status = match store.get(&credential_id) {
-                Some(Credential::ApiKey { .. }) => "Saved API key".to_owned(),
-                Some(Credential::Oauth { .. }) => "Logged in".to_owned(),
-                None => continue,
-            };
-            entries.push(Entry {
-                label: credential_id.clone(),
-                status,
-                kind: EntryKind::SavedCredential {
-                    credential_id: credential_id.clone(),
-                },
-                credential_id: Some(credential_id),
-            });
-        }
-    }
     entries
 }
 
@@ -530,6 +695,11 @@ pub fn render_provider_login_modal(
             clickable: false,
             id: 0,
         }],
+        Mode::RemovingXaiSession => vec![Shortcut {
+            label: "Removing credential…",
+            clickable: false,
+            id: 0,
+        }],
         Mode::ConfirmLogout { .. } => vec![
             Shortcut {
                 label: "y confirm logout",
@@ -577,8 +747,24 @@ pub fn render_provider_login_modal(
         );
         return;
     }
+    if matches!(&state.mode, Mode::RemovingXaiSession) {
+        buf.set_span(
+            content.x,
+            content.y + 1,
+            &Span::styled(
+                "Removing your xAI / Grok session…",
+                Style::default().fg(theme.text_primary),
+            ),
+            content.width,
+        );
+        return;
+    }
 
-    let intro = "Connected accounts and API keys. Credentials are never displayed.";
+    let intro = if state.logout_only {
+        "Saved credentials. Select one to remove it; credentials are never displayed."
+    } else {
+        "Connected accounts and API keys. Credentials are never displayed."
+    };
     buf.set_span(
         content.x,
         content.y,
@@ -604,14 +790,18 @@ pub fn render_provider_login_modal(
         if y >= content.y + content.height {
             break;
         }
-        if matches!(entry.kind, EntryKind::Header) {
+        if let EntryKind::Header { logged_in } = &entry.kind {
             buf.set_span(
                 content.x,
                 y,
                 &Span::styled(
                     &entry.label,
                     Style::default()
-                        .fg(theme.accent_user)
+                        .fg(if *logged_in {
+                            theme.accent_success
+                        } else {
+                            theme.accent_user
+                        })
                         .add_modifier(Modifier::BOLD),
                 ),
                 content.width,
@@ -651,7 +841,16 @@ pub fn render_provider_login_modal(
         buf.set_span(
             status_x,
             y,
-            &Span::styled(&entry.status, Style::default().fg(theme.gray).bg(bg)),
+            &Span::styled(
+                &entry.status,
+                Style::default()
+                    .fg(if entry.connected {
+                        theme.accent_success
+                    } else {
+                        theme.gray
+                    })
+                    .bg(bg),
+            ),
             status_width,
         );
     }
@@ -664,8 +863,11 @@ pub fn render_provider_login_modal(
             content.width,
         );
     }
-    if let Mode::ConfirmLogout { credential_id } = &state.mode {
-        let prompt = format!("Log out of {credential_id}? Press y to remove the saved credential.");
+    if let Mode::ConfirmLogout { target } = &state.mode {
+        let prompt = format!(
+            "Log out of {}? Press y to remove the saved credential.",
+            target.label()
+        );
         let y = content.y + content.height.saturating_sub(1);
         buf.set_span(
             content.x,
@@ -682,7 +884,11 @@ pub fn render_provider_login_modal(
 }
 
 fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme: &Theme) {
-    let intro = format!("Connect {} without leaving Atlas.", form.provider);
+    let intro = if form.provider == "openrouter" {
+        "Connect OpenRouter with the model ids you want to use."
+    } else {
+        "Connect a provider without leaving Atlas."
+    };
     buf.set_span(
         content.x,
         content.y,
@@ -695,7 +901,15 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
     }
     fields.push(("API key", form.api_key.as_str(), true));
     if form.needs_model_field() {
-        fields.push(("Model id", form.model.as_str(), false));
+        fields.push((
+            if form.provider == "openrouter" {
+                "Models (comma-separated)"
+            } else {
+                "Model id"
+            },
+            form.model.as_str(),
+            false,
+        ));
     }
     for (index, (label, value, secret)) in fields.iter().enumerate() {
         let y = content.y + 2 + index as u16 * 2;
@@ -717,7 +931,7 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
         };
         buf.set_span(content.x, y, &Span::styled(text, style), content.width);
     }
-    if form.base_url.is_some() {
+    if form.model_discovery_base_url().is_some() {
         let y = content.y + 2 + fields.len() as u16 * 2;
         let status = if form.discovering_models {
             "Models: loading from /models…".to_owned()
@@ -737,14 +951,16 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
             content.width,
         );
     }
+    let hint = if form.provider == "openrouter" {
+        "Enter model ids separated by commas · Ctrl+S saves each one."
+    } else {
+        "Pasting an API key loads all models · Ctrl+R reloads · Ctrl+S saves."
+    };
     let hint_y = content.y + content.height.saturating_sub(1);
     buf.set_span(
         content.x,
         hint_y,
-        &Span::styled(
-            "Pasting an API key loads /models · Ctrl+R reloads · Ctrl+S saves.",
-            Style::default().fg(theme.gray),
-        ),
+        &Span::styled(hint, Style::default().fg(theme.gray)),
         content.width,
     );
 }
@@ -756,10 +972,18 @@ pub fn handle_provider_login_key(
     if key.kind == KeyEventKind::Release {
         return InputOutcome::Unchanged;
     }
-    if let Mode::ConfirmLogout { credential_id } = &state.mode {
-        let credential_id = credential_id.clone();
+    if let Mode::ConfirmLogout { target } = &state.mode {
+        let target = target.clone();
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => state.remove_credential(&credential_id),
+            KeyCode::Char('y') | KeyCode::Char('Y') => match target {
+                LogoutTarget::XaiSession => {
+                    state.mode = Mode::RemovingXaiSession;
+                    return InputOutcome::Action(Action::LogoutXaiFromProviderModal);
+                }
+                LogoutTarget::SavedCredential { credential_id } => {
+                    state.remove_credential(&credential_id)
+                }
+            },
             _ => state.mode = Mode::Browse,
         }
         return InputOutcome::Changed;
@@ -794,7 +1018,7 @@ pub fn handle_provider_login_key(
                 form.field = (form.field + 1) % form.field_count();
                 let load_models = leaving_api_key
                     && form.models.is_empty()
-                    && form.base_url.is_some()
+                    && form.model_discovery_base_url().is_some()
                     && !form.discovering_models;
                 if load_models {
                     // Drop the form borrow before starting the stateful async
@@ -808,6 +1032,7 @@ pub fn handle_provider_login_key(
                 return InputOutcome::Changed;
             }
             KeyCode::Backspace => {
+                form.invalidate_model_discovery();
                 form.active_text_mut().pop();
                 return InputOutcome::Changed;
             }
@@ -826,15 +1051,16 @@ pub fn handle_provider_login_key(
                 return InputOutcome::Changed;
             }
             KeyCode::Char(c) if crate::input::key::is_text_input_key(key) => {
+                form.invalidate_model_discovery();
                 form.active_text_mut().push(c);
                 return InputOutcome::Changed;
             }
             _ => return InputOutcome::Unchanged,
         }
     }
-    // Reaching the Model id field after entering a LiteLLM/custom key starts
-    // discovery automatically. If validation fails, keep the form open with a
-    // clear message and allow the user to correct the missing value.
+    // Leaving the API-key field starts model discovery automatically. If
+    // validation fails, keep the form open with a clear message and allow the
+    // user to correct the missing value.
     if matches!(state.mode, Mode::ApiKey(_)) {
         return match state.start_model_discovery() {
             Ok(()) => InputOutcome::Action(Action::DiscoverProviderModels),
@@ -844,7 +1070,10 @@ pub fn handle_provider_login_key(
             }
         };
     }
-    if matches!(state.mode, Mode::WaitingForBrowser { .. }) {
+    if matches!(
+        state.mode,
+        Mode::WaitingForBrowser { .. } | Mode::RemovingXaiSession
+    ) {
         return InputOutcome::Unchanged;
     }
     match key.code {
@@ -865,6 +1094,10 @@ pub fn handle_provider_login_key(
             state.logout_selected();
             InputOutcome::Changed
         }
+        KeyCode::Enter if state.logout_only => {
+            state.logout_selected();
+            InputOutcome::Changed
+        }
         KeyCode::Enter => match state.selected_entry().map(|entry| entry.kind.clone()) {
             Some(EntryKind::Provider { provider }) => {
                 if xai_grok_shell::agent::connection::api_key_provider_presets()
@@ -882,6 +1115,10 @@ pub fn handle_provider_login_key(
                 }
             }
             Some(EntryKind::SavedCredential { .. }) => {
+                state.notice = Some("Press d to log out of this saved credential.".to_owned());
+                InputOutcome::Changed
+            }
+            Some(EntryKind::XaiSession) => {
                 state.notice = Some("Press d to log out of this saved credential.".to_owned());
                 InputOutcome::Changed
             }
@@ -911,7 +1148,7 @@ fn paste_and_maybe_discover_models(
     }
     let should_discover = matches!(&state.mode, Mode::ApiKey(form)
         if form.field == form.api_key_field()
-            && form.base_url.is_some()
+            && form.model_discovery_base_url().is_some()
             && !form.api_key.trim().is_empty()
             && form.models.is_empty()
             && !form.discovering_models);
@@ -935,6 +1172,7 @@ fn paste_into_active_field(state: &mut ProviderLoginModalState, text: &str) -> I
     let Mode::ApiKey(form) = &mut state.mode else {
         return InputOutcome::Unchanged;
     };
+    form.invalidate_model_discovery();
     form.active_text_mut().push_str(&cleaned);
     InputOutcome::Changed
 }
@@ -997,12 +1235,68 @@ mod tests {
 
         assert!(matches!(
             handle_provider_login_paste(&mut state, "sk-secret\r\n"),
-            InputOutcome::Changed
+            InputOutcome::Action(Action::DiscoverProviderModels)
         ));
         let Mode::ApiKey(form) = &state.mode else {
             panic!("form should stay open");
         };
         assert_eq!(form.api_key, "sk-secret");
+    }
+
+    #[test]
+    fn stale_model_discovery_result_does_not_update_a_replaced_form() {
+        let mut state = ProviderLoginModalState::new(None);
+        state.mode = Mode::ApiKey(ApiKeyForm::new("litellm".to_owned()));
+        if let Mode::ApiKey(form) = &mut state.mode {
+            form.api_key = "secret".to_owned();
+        }
+        state.start_model_discovery().unwrap();
+        let (request_id, _, _) = state.model_discovery_credentials().unwrap();
+
+        state.mode = Mode::ApiKey(ApiKeyForm::new("custom".to_owned()));
+        state.finish_model_discovery(request_id, Ok(&["stale-model".to_owned()]));
+
+        let Mode::ApiKey(form) = &state.mode else {
+            panic!("replacement form should stay open");
+        };
+        assert!(form.models.is_empty());
+        assert!(form.model.is_empty());
+    }
+
+    #[test]
+    fn openrouter_saves_only_the_manually_selected_models() {
+        let form = ApiKeyForm::new("openrouter".to_owned());
+        assert!(form.model_discovery_base_url().is_none());
+        assert!(form.model.is_empty());
+
+        let form = ApiKeyForm {
+            model: "anthropic/claude-sonnet-4, openai/gpt-5, openai/gpt-5".to_owned(),
+            ..form
+        };
+        assert_eq!(
+            form.models_to_save(),
+            vec![
+                "anthropic/claude-sonnet-4".to_owned(),
+                "openai/gpt-5".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn confirming_xai_logout_stays_in_the_provider_manager() {
+        let mut state = ProviderLoginModalState::new_logout();
+        state.mode = Mode::ConfirmLogout {
+            target: LogoutTarget::XaiSession,
+        };
+
+        assert!(matches!(
+            handle_provider_login_key(
+                &mut state,
+                &KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            ),
+            InputOutcome::Action(Action::LogoutXaiFromProviderModal)
+        ));
+        assert!(matches!(state.mode, Mode::RemovingXaiSession));
     }
 
     #[test]

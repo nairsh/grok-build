@@ -614,6 +614,7 @@ fn switch_model_without_session_does_nothing() {
         Action::SwitchModel {
             model_id,
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -789,6 +790,7 @@ fn switch_model_deferred_when_no_session_id() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );

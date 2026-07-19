@@ -1736,6 +1736,12 @@ impl SessionActor {
                 vec![],
                 vec![],
             ),
+            ToolInput::Workflow(_) => (
+                "Run workflow".to_string(),
+                acp::ToolKind::Other,
+                vec![],
+                vec![],
+            ),
             ToolInput::EnterPlanMode(_) => (
                 "Plan: Enter".to_string(),
                 acp::ToolKind::Other,

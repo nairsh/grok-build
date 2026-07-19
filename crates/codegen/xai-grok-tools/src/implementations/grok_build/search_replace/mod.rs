@@ -162,6 +162,10 @@ pub(crate) async fn run_search_replace(
         }
         Err(_) => resolved,
     };
+    {
+        let res = resources.lock().await;
+        crate::types::resources::enforce_workflow_filesystem_root(&res, &path)?;
+    }
     if let Some(err) = validate_path_length(&input.file_path) {
         return Ok(err);
     }

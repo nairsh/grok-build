@@ -1,16 +1,48 @@
 use super::*;
 use crate::remote::DEFAULT_CONTEXT_WINDOW;
 use xai_chat_state::conversation_util::replace_or_insert_system_head;
+use xai_grok_sampler::SERVICE_TIER_MARKER_HEADER;
 impl SessionActor {
     pub(super) async fn handle_set_session_model(
         &self,
-        sampling_config: xai_grok_sampler::SamplerConfig,
+        mut sampling_config: xai_grok_sampler::SamplerConfig,
+        service_tier_override: Option<Option<String>>,
         use_concise: bool,
         apply_prompt_override: bool,
         skip_prompt_rewrite: bool,
         auto_compact_threshold_percent: u8,
     ) -> Result<acp::ModelId, acp::Error> {
         let model_id = acp::ModelId::new(sampling_config.model.clone());
+        let previous_service_tier =
+            self.chat_state_handle
+                .get_sampling_config()
+                .await
+                .and_then(|config| {
+                    config
+                        .extra_headers
+                        .get(SERVICE_TIER_MARKER_HEADER)
+                        .cloned()
+                });
+        let service_tier = if sampling_config
+            .base_url
+            .contains("chatgpt.com/backend-api/codex")
+        {
+            service_tier_override.unwrap_or(previous_service_tier)
+        } else {
+            None
+        };
+        match service_tier {
+            Some(service_tier) => {
+                sampling_config
+                    .extra_headers
+                    .insert(SERVICE_TIER_MARKER_HEADER.to_string(), service_tier);
+            }
+            None => {
+                sampling_config
+                    .extra_headers
+                    .swap_remove(SERVICE_TIER_MARKER_HEADER);
+            }
+        }
         let new_context_window = self.compaction.context_window_override.unwrap_or_else(|| {
             std::num::NonZeroU64::new(sampling_config.context_window).unwrap_or_else(|| {
                 std::num::NonZeroU64::new(DEFAULT_CONTEXT_WINDOW)

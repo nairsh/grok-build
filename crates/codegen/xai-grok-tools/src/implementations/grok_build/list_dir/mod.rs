@@ -496,6 +496,10 @@ impl xai_tool_runtime::Tool for ListDirTool {
             )
         };
         let path = resolve_model_path(&cwd, display_cwd.as_deref(), &input.target_directory);
+        {
+            let res = resources.lock().await;
+            crate::types::resources::enforce_workflow_filesystem_root(&res, &path)?;
+        }
         let display_base = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
         let display_path = compute_display_path(&display_base, &input.target_directory);
         let meta = tokio::fs::metadata(&path).await;

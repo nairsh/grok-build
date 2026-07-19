@@ -340,6 +340,7 @@ mod tests {
         let request = SubagentRequest {
             id: "test-id".to_string(),
             prompt: "do something".to_string(),
+            json_schema: None,
             description: "test".to_string(),
             subagent_type: "general-purpose".to_string(),
             parent_session_id: "parent".to_string(),
@@ -350,6 +351,8 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            strict_read_only: false,
+            strict_workflow_write: false,
             result_tx: dummy_tx,
         };
 
@@ -372,6 +375,7 @@ mod tests {
         let request = SubagentRequest {
             id: "test-id".to_string(),
             prompt: "do something".to_string(),
+            json_schema: None,
             description: "test".to_string(),
             subagent_type: "general-purpose".to_string(),
             parent_session_id: "parent".to_string(),
@@ -382,6 +386,8 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            strict_read_only: false,
+            strict_workflow_write: false,
             result_tx: dummy_tx,
         };
 
@@ -525,6 +531,7 @@ mod tests {
         let request = SubagentRequest {
             id: "drop-test".to_string(),
             prompt: "test".to_string(),
+            json_schema: None,
             description: "test".to_string(),
             subagent_type: "general-purpose".to_string(),
             parent_session_id: "parent".to_string(),
@@ -535,6 +542,8 @@ mod tests {
             run_in_background: false,
             surface_completion: true,
             fork_context: false,
+            strict_read_only: false,
+            strict_workflow_write: false,
             result_tx: dummy_tx,
         };
 

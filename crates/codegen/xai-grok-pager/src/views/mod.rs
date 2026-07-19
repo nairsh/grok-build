@@ -51,3 +51,4 @@ pub mod timeline;
 pub mod todo_pane;
 pub mod turn_status;
 pub mod welcome;
+pub mod workflows_modal;

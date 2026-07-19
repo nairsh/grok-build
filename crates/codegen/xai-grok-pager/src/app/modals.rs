@@ -104,6 +104,48 @@ impl AgentView {
             return InputOutcome::Changed;
         };
 
+        if let ActiveModal::Workflows { state } = modal {
+            use crate::views::workflows_modal::{WorkflowsOutcome, WorkflowsPage};
+            return match crate::views::workflows_modal::handle_key(state, key) {
+                WorkflowsOutcome::Changed => InputOutcome::Changed,
+                WorkflowsOutcome::Close => {
+                    self.active_modal = None;
+                    InputOutcome::Changed
+                }
+                WorkflowsOutcome::Request(request) => {
+                    InputOutcome::Action(Action::WorkflowRequest(request))
+                }
+                WorkflowsOutcome::SetUltracode(enabled) => {
+                    InputOutcome::Action(Action::SetUltracode(Some(enabled)))
+                }
+                WorkflowsOutcome::RunSaved(name) => {
+                    self.active_modal = None;
+                    InputOutcome::Action(Action::RunSavedWorkflow(name))
+                }
+                WorkflowsOutcome::ReviewWorktree {
+                    run_id,
+                    worker_id,
+                    worktree_path,
+                } => {
+                    state.page = WorkflowsPage::WorktreeReview {
+                        run_id: run_id.clone(),
+                        worker_id: worker_id.clone(),
+                        worktree_path: worktree_path.clone(),
+                    };
+                    state.loading = true;
+                    state.worktree_changes.clear();
+                    InputOutcome::Action(Action::ReviewWorkflowWorktree {
+                        run_id,
+                        worker_id,
+                        worktree_path,
+                    })
+                }
+                WorkflowsOutcome::ApplyWorktree { worktree_path } => {
+                    InputOutcome::Action(Action::ApplyWorkflowWorktree { worktree_path })
+                }
+            };
+        }
+
         // Picker-based modals: route Esc through ModalWindow chrome first,
         // then delegate remaining keys to the picker input handler.
         if matches!(
@@ -499,7 +541,8 @@ impl AgentView {
             | ActiveModal::Settings { .. }
             | ActiveModal::ProviderLogin { .. }
             | ActiveModal::ResetSettingsConfirm { .. }
-            | ActiveModal::RememberNoteReview { .. } => unreachable!(),
+            | ActiveModal::RememberNoteReview { .. }
+            | ActiveModal::Workflows { .. } => unreachable!(),
         }
     }
 
@@ -1336,6 +1379,48 @@ impl AgentView {
         use crate::views::modal_window::{self as mw, ModalWindowOutcome};
         use crossterm::event::MouseEventKind;
 
+        if let Some(ActiveModal::Workflows { state }) = self.active_modal.as_mut() {
+            use crate::views::workflows_modal::{WorkflowsOutcome, WorkflowsPage};
+            return match crate::views::workflows_modal::handle_mouse(state, mouse) {
+                WorkflowsOutcome::Changed => InputOutcome::Changed,
+                WorkflowsOutcome::Close => {
+                    self.active_modal = None;
+                    InputOutcome::Changed
+                }
+                WorkflowsOutcome::Request(request) => {
+                    InputOutcome::Action(Action::WorkflowRequest(request))
+                }
+                WorkflowsOutcome::SetUltracode(enabled) => {
+                    InputOutcome::Action(Action::SetUltracode(Some(enabled)))
+                }
+                WorkflowsOutcome::RunSaved(name) => {
+                    self.active_modal = None;
+                    InputOutcome::Action(Action::RunSavedWorkflow(name))
+                }
+                WorkflowsOutcome::ReviewWorktree {
+                    run_id,
+                    worker_id,
+                    worktree_path,
+                } => {
+                    state.page = WorkflowsPage::WorktreeReview {
+                        run_id: run_id.clone(),
+                        worker_id: worker_id.clone(),
+                        worktree_path: worktree_path.clone(),
+                    };
+                    state.loading = true;
+                    state.worktree_changes.clear();
+                    InputOutcome::Action(Action::ReviewWorkflowWorktree {
+                        run_id,
+                        worker_id,
+                        worktree_path,
+                    })
+                }
+                WorkflowsOutcome::ApplyWorktree { worktree_path } => {
+                    InputOutcome::Action(Action::ApplyWorkflowWorktree { worktree_path })
+                }
+            };
+        }
+
         // Picker-based modals: route through ModalWindow chrome first,
         // then delegate content events to the picker input handler.
         if matches!(
@@ -1652,6 +1737,11 @@ impl AgentView {
                 self as mw, ModalSizing, ModalWindowConfig, Shortcut,
             };
             use crate::views::picker::{self, PickerEntry, PickerRow};
+
+            if let modal::ActiveModal::Workflows { state } = active_modal {
+                crate::views::workflows_modal::render(buf, area, state, compact, &theme);
+                return;
+            }
 
             // Standard footer shortcuts for picker-style modals.
             let mut picker_shortcuts: Vec<Shortcut> = vec![

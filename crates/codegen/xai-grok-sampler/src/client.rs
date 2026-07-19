@@ -28,7 +28,7 @@ use xai_grok_sampling_types::{
     rs,
 };
 
-use crate::config::{AuthScheme, OriginClientInfo, SamplerConfig};
+use crate::config::{AuthScheme, OriginClientInfo, SERVICE_TIER_MARKER_HEADER, SamplerConfig};
 
 // Re-export ApiBackend from the shared types crate for downstream callers.
 pub use xai_grok_sampling_types::ApiBackend;
@@ -382,6 +382,7 @@ struct ClientDefaults {
     auth_scheme: AuthScheme,
     stream_tool_calls: bool,
     doom_loop_recovery: Option<xai_grok_sampling_types::DoomLoopRecoveryPolicy>,
+    service_tier: Option<String>,
 }
 
 // =============================================================================
@@ -466,6 +467,8 @@ impl SamplingClient {
     /// any network I/O.
     pub fn new(config: SamplerConfig) -> Result<Self> {
         let mut headers = HeaderMap::new();
+        let mut extra_headers = config.extra_headers;
+        let service_tier = extra_headers.swap_remove(SERVICE_TIER_MARKER_HEADER);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if is_chatgpt_codex_endpoint(&config.base_url) {
             for (name, value) in [
@@ -519,7 +522,7 @@ impl SamplingClient {
         // Apply all extra headers verbatim. This is the single
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
-        for (key, value) in &config.extra_headers {
+        for (key, value) in &extra_headers {
             let header_name = HeaderName::try_from(key.as_str())
                 .map_err(|_| SamplingError::InvalidConfiguration("Invalid extra header name"))?;
             let header_value = HeaderValue::from_str(value)
@@ -611,6 +614,7 @@ impl SamplingClient {
             auth_scheme: config.auth_scheme,
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
+            service_tier,
         };
 
         Ok(Self {
@@ -906,6 +910,12 @@ impl SamplingClient {
         // treating it as absent. Preserve the call ID (which links the tool
         // result to the call), but omit only empty item IDs.
         strip_empty_response_item_ids(body);
+        // ChatGPT's Codex route controls the output budget itself and rejects
+        // the public Responses API `max_output_tokens` field. Remove both
+        // caller-provided values and sampler defaults at the wire boundary.
+        if let Some(object) = body.as_object_mut() {
+            object.remove("max_output_tokens");
+        }
 
         let installation_id = self
             .default_headers
@@ -1304,6 +1314,10 @@ impl SamplingClient {
             tracing::error!("Failed to serialize responses request: {}", e);
             SamplingError::Serialization(e)
         })?;
+        self.apply_chatgpt_codex_request_metadata(&request, &mut request_body);
+        if let Some(service_tier) = self.defaults.service_tier.as_deref() {
+            request_body["service_tier"] = serde_json::json!(service_tier);
+        }
         // async-openai's ReasoningTextContent struct omits the `type`
         // discriminator that the Responses API requires on input. Patch
         // it in post-serialize. This is the last surviving piece of the
@@ -1444,6 +1458,9 @@ impl SamplingClient {
         // Inject xAI-specific fields not in async-openai's CreateResponse type.
         if self.defaults.stream_tool_calls {
             request_body["stream_tool_calls"] = serde_json::json!(true);
+        }
+        if let Some(service_tier) = self.defaults.service_tier.as_deref() {
+            request_body["service_tier"] = serde_json::json!(service_tier);
         }
         // Inject xAI-specific tools (e.g., x_search) that can't be expressed
         // via async_openai's rs::Tool enum.
@@ -2345,6 +2362,26 @@ mod tests {
         let tool_call = &body["input"][0];
         assert!(tool_call.get("id").is_none());
         assert_eq!(tool_call["call_id"], "call_abc123");
+    }
+
+    #[test]
+    fn chatgpt_codex_omits_unsupported_max_output_tokens() {
+        let client = SamplingClient::new(SamplerConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_owned(),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        })
+        .unwrap();
+        let request = CreateResponseWrapper::new(rs::CreateResponse::default());
+        let mut body = serde_json::json!({
+            "model": "test-model",
+            "max_output_tokens": 100
+        });
+
+        client.apply_chatgpt_codex_request_metadata(&request, &mut body);
+
+        assert!(body.get("max_output_tokens").is_none());
+        assert_eq!(body["model"], "test-model");
     }
 
     #[test]

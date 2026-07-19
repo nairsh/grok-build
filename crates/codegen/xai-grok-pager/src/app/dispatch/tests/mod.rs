@@ -214,6 +214,7 @@ fn test_app() -> AppView {
         welcome_shimmer_frame: 0,
         startup_warnings: Vec::new(),
         is_api_key_auth: false,
+        pending_provider_login: None,
         pending_update_version: None,
         foreign_resume_launch_generation: 0,
         foreign_resume_launch: None,

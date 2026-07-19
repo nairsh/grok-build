@@ -171,6 +171,210 @@ fn drain_clipboard_target(target: &ClipboardPasteTarget, app: &mut AppView) -> V
 /// Handle a completed async task result.
 pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec<Effect> {
     match result {
+        TaskResult::WorkflowResponse {
+            agent_id,
+            request,
+            result,
+        } => {
+            use crate::views::workflows_modal::{WorkflowUiAction, workers_from_journal};
+            let Some(agent) = app.agents.get_mut(&agent_id) else {
+                return vec![];
+            };
+            match result {
+                Ok(value) => {
+                    match request.action {
+                        WorkflowUiAction::List => {
+                            if let Ok(runs) = serde_json::from_value::<Vec<
+                                xai_grok_tools::implementations::grok_build::workflow::supervisor::WorkflowRunSnapshot,
+                            >>(value)
+                            {
+                                agent.workflows.runs = runs
+                                    .iter()
+                                    .cloned()
+                                    .map(|run| (run.run_id.clone(), run))
+                                    .collect();
+                                if let Some(crate::views::modal::ActiveModal::Workflows {
+                                    state,
+                                }) = agent.active_modal.as_mut()
+                                {
+                                    state.replace_runs(runs);
+                                    state.message = None;
+                                }
+                            }
+                        }
+                        WorkflowUiAction::Workers => {
+                            if let Some(crate::views::modal::ActiveModal::Workflows {
+                                state,
+                            }) = agent.active_modal.as_mut()
+                            {
+                                state.workers = workers_from_journal(&value);
+                                state.loading = false;
+                                state.pending_action = None;
+                                state.selected =
+                                    state.selected.min(state.workers.len().saturating_sub(1));
+                            }
+                        }
+                        WorkflowUiAction::SetUltracode => {
+                            let enabled = value
+                                .get("enabled")
+                                .and_then(|value| value.as_bool())
+                                .unwrap_or(agent.workflows.ultracode_enabled);
+                            agent.workflows.ultracode_enabled = enabled;
+                            if let Some(crate::views::modal::ActiveModal::Workflows {
+                                state,
+                            }) = agent.active_modal.as_mut()
+                            {
+                                state.ultracode_enabled = enabled;
+                                state.pending_action = None;
+                                state.message = Some((
+                                    if enabled {
+                                        "UltraCode enabled · xhigh reasoning"
+                                    } else {
+                                        "UltraCode disabled"
+                                    }
+                                    .into(),
+                                    false,
+                                ));
+                            }
+                        }
+                        WorkflowUiAction::CancelWorker => {
+                            if let Some(crate::views::modal::ActiveModal::Workflows {
+                                state,
+                            }) = agent.active_modal.as_mut()
+                            {
+                                let worker_id = value
+                                    .get("workerId")
+                                    .and_then(serde_json::Value::as_str)
+                                    .or(request.worker_id.as_deref());
+                                if let Some(worker) = worker_id.and_then(|worker_id| {
+                                    state
+                                        .workers
+                                        .iter_mut()
+                                        .find(|worker| worker.worker_id == worker_id)
+                                }) {
+                                    worker.status = value
+                                        .get("status")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("cancelled")
+                                        .to_string();
+                                }
+                                state.pending_action = None;
+                                state.message = Some(("Worker cancellation requested".into(), false));
+                            }
+                        }
+                        _ => {
+                            if let Ok(snapshot) = serde_json::from_value::<
+                                xai_grok_tools::implementations::grok_build::workflow::supervisor::WorkflowRunSnapshot,
+                            >(value.clone())
+                            {
+                                agent.workflows.apply_snapshot(snapshot.clone());
+                                if let Some(crate::views::modal::ActiveModal::Workflows {
+                                    state,
+                                }) = agent.active_modal.as_mut()
+                                {
+                                    if let Some(run) = state
+                                        .runs
+                                        .iter_mut()
+                                        .find(|run| run.run_id == snapshot.run_id)
+                                    {
+                                        *run = snapshot;
+                                    }
+                                    state.pending_action = None;
+                                    state.message = Some(("Workflow updated".into(), false));
+                                }
+                            } else if let Some(crate::views::modal::ActiveModal::Workflows {
+                                state,
+                            }) = agent.active_modal.as_mut()
+                            {
+                                state.pending_action = None;
+                                state.message = Some(("Workflow action completed".into(), false));
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    if let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                        agent.active_modal.as_mut()
+                    {
+                        state.loading = false;
+                        state.pending_action = None;
+                        state.message = Some((error.clone(), true));
+                    }
+                    agent.show_toast(&format!("Workflow: {error}"));
+                }
+            }
+            vec![]
+        }
+        TaskResult::WorkflowWorktreeApplied { agent_id, result } => {
+            let Some(agent) = app.agents.get_mut(&agent_id) else {
+                return vec![];
+            };
+            match result {
+                Ok(_) => {
+                    agent.show_toast("Workflow worktree changes applied");
+                    if let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                        agent.active_modal.as_mut()
+                    {
+                        state.loading = false;
+                        state.pending_action = None;
+                        state.message =
+                            Some(("Changes applied to the current checkout".into(), false));
+                    }
+                }
+                Err(error) => {
+                    agent.show_toast(&format!("Worktree apply failed: {error}"));
+                    if let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                        agent.active_modal.as_mut()
+                    {
+                        state.loading = false;
+                        state.pending_action = None;
+                        state.message = Some((error, true));
+                    }
+                }
+            }
+            vec![]
+        }
+        TaskResult::WorkflowWorktreeReviewed { agent_id, result } => {
+            let Some(agent) = app.agents.get_mut(&agent_id) else {
+                return vec![];
+            };
+            let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                agent.active_modal.as_mut()
+            else {
+                return vec![];
+            };
+            state.loading = false;
+            state.pending_action = None;
+            match result {
+                Ok(value) => {
+                    let data = value
+                        .get("result")
+                        .and_then(|value| value.get("data"))
+                        .or_else(|| value.get("data"))
+                        .unwrap_or(&value);
+                    let changes = ["staged", "unstaged"]
+                        .into_iter()
+                        .flat_map(|key| {
+                            data.get(key)
+                                .and_then(serde_json::Value::as_array)
+                                .into_iter()
+                                .flatten()
+                                .cloned()
+                        })
+                        .filter_map(|value| {
+                            serde_json::from_value::<
+                                crate::views::workflows_modal::WorkflowWorktreeChange,
+                            >(value)
+                            .ok()
+                        })
+                        .collect();
+                    state.worktree_changes = changes;
+                    state.message = None;
+                }
+                Err(error) => state.message = Some((error, true)),
+            }
+            vec![]
+        }
         TaskResult::ProviderOauthLoginComplete {
             agent_id,
             provider,
@@ -188,7 +392,24 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             }
             vec![]
         }
-        TaskResult::ProviderModelDiscoveryComplete { agent_id, result } => {
+        TaskResult::ProviderXaiLogoutComplete { agent_id, result } => {
+            if let Some(agent) = app.agents.get_mut(&agent_id)
+                && let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                    agent.active_modal.as_mut()
+            {
+                let result = match &result {
+                    Ok(()) => Ok(()),
+                    Err(error) => Err(error.as_str()),
+                };
+                state.finish_xai_logout(result);
+            }
+            vec![]
+        }
+        TaskResult::ProviderModelDiscoveryComplete {
+            agent_id,
+            request_id,
+            result,
+        } => {
             if let Some(agent) = app.agents.get_mut(&agent_id)
                 && let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
                     agent.active_modal.as_mut()
@@ -197,7 +418,7 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
                     Ok(models) => Ok(models.as_slice()),
                     Err(error) => Err(error.as_str()),
                 };
-                state.finish_model_discovery(result);
+                state.finish_model_discovery(request_id, result);
             }
             vec![]
         }

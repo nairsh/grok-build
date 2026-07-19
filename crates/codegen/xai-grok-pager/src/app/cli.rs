@@ -22,6 +22,10 @@ pub enum Command {
     /// Sign in (interactive menu: subscription OAuth or API key). Flags below
     /// select the direct xAI path for scripting.
     Login {
+        /// Provider id or name (for example: openrouter, google, openai-codex).
+        /// Omit to open the provider picker.
+        #[arg(value_name = "PROVIDER", conflicts_with_all = ["oauth", "device_auth"])]
+        provider: Option<String>,
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
         #[arg(long, hide = true)]
         legacy: bool,

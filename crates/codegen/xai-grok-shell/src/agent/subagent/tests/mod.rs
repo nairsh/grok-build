@@ -3,6 +3,116 @@ use super::*;
 use crate::test_support::lsp_runtime::{
     DummyLspDispatch, ctx_with_toggle, make_request, test_gateway,
 };
+
+#[test]
+fn strict_workflow_profile_is_exact_and_context_is_clamped() {
+    use xai_grok_tools::types::tool::ToolKind;
+
+    let definition = strict_workflow_definition(false);
+    let kinds: Vec<_> = definition
+        .tool_config
+        .tools
+        .iter()
+        .map(|tool| tool.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            Some(ToolKind::Read),
+            Some(ToolKind::List),
+            Some(ToolKind::Search),
+        ]
+    );
+    assert!(!definition.inject_default_tools);
+    assert!(!definition.agents_md);
+    assert!(!definition.discover_skills);
+    assert!(!definition.inherit_skills);
+    assert!(definition.mcp_servers.is_empty());
+    assert!(matches!(
+        definition.mcp_inheritance,
+        xai_grok_agent::config::McpInheritance::None
+    ));
+    assert!(definition.hooks.is_none());
+    assert!(definition.memory.is_none());
+    assert_eq!(definition.allowed_subagent_types, Some(Vec::new()));
+
+    let mut ctx = ctx_with_toggle(std::collections::HashMap::new());
+    ctx.yolo_mode = true;
+    ctx.write_file_enabled = true;
+    ctx.goal_enabled = true;
+    ctx.ask_user_question_enabled = true;
+    ctx.backend_tools_enabled = true;
+    ctx.disable_web_search = false;
+    ctx.managed_mcp_proxy_base_url = "https://managed.invalid".into();
+    ctx.session_env = std::sync::Arc::new(
+        [("SECRET".to_string(), "must-not-flow".to_string())]
+            .into_iter()
+            .collect(),
+    );
+    ctx.gcs_bucket_url = Some("gs://trace-bucket".into());
+    ctx.agent_config = Some(crate::agent::config::Config::default());
+    ctx.hook_registry = Some(std::sync::Arc::new(Default::default()));
+
+    clamp_strict_workflow_context(&mut ctx, false);
+
+    assert!(!ctx.yolo_mode);
+    assert!(!ctx.write_file_enabled);
+    assert!(!ctx.goal_enabled);
+    assert!(!ctx.ask_user_question_enabled);
+    assert!(!ctx.backend_tools_enabled);
+    assert!(ctx.disable_web_search);
+    assert!(ctx.managed_mcp_proxy_base_url.is_empty());
+    assert!(ctx.parent_mcp_configs.is_empty());
+    assert!(ctx.parent_mcp_pool.is_none());
+    assert!(ctx.parent_skills.is_none());
+    assert!(ctx.session_env.is_empty());
+    assert!(ctx.gcs_bucket_url.is_none());
+    assert!(ctx.gcs_upload_method.is_none());
+    assert!(ctx.agent_config.is_none());
+    assert!(ctx.hook_registry.is_none());
+    assert!(ctx.client_hooks.is_empty());
+    assert!(ctx.memory_config.is_none());
+    assert!(ctx.web_search_sampling_config.is_none());
+    assert!(ctx.parent_terminal_backend.is_none());
+    assert!(ctx.parent_scheduler_handle.is_none());
+    assert!(ctx.api_key_provider.is_none());
+}
+
+#[test]
+fn strict_workflow_writer_adds_only_edit_and_keeps_write_context() {
+    use xai_grok_tools::types::tool::ToolKind;
+
+    let definition = strict_workflow_definition(true);
+    let kinds: Vec<_> = definition
+        .tool_config
+        .tools
+        .iter()
+        .map(|tool| tool.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            Some(ToolKind::Read),
+            Some(ToolKind::List),
+            Some(ToolKind::Search),
+            Some(ToolKind::Edit),
+        ]
+    );
+    assert_eq!(
+        definition.capability_mode,
+        Some(xai_tool_types::SubagentCapabilityMode::ReadWrite)
+    );
+    assert_eq!(definition.allowed_subagent_types, Some(Vec::new()));
+    assert!(!definition.inject_default_tools);
+
+    let mut ctx = ctx_with_toggle(std::collections::HashMap::new());
+    clamp_strict_workflow_context(&mut ctx, true);
+    assert!(ctx.write_file_enabled);
+    assert!(ctx.session_env.is_empty());
+    assert!(ctx.parent_mcp_configs.is_empty());
+    assert!(ctx.parent_scheduler_handle.is_none());
+}
+
 /// Invariant: resolving a subagent applies the parent session's
 /// `--tools`/`--disallowed-tools`/`--permission-mode` — driven through
 /// `resolve_agent_definition` so the spawn path can't skip them.
@@ -533,22 +643,26 @@ async fn mark_explicitly_killed_active_then_propagates_to_completed() {
 }
 #[test]
 fn should_auto_wake_subagent_requires_background_and_enabled() {
-    assert!(! should_auto_wake_subagent(false, false, true, false, false, false, true));
-    assert!(! should_auto_wake_subagent(true, false, false, false, false, false, true));
-    assert!(should_auto_wake_subagent(true, false, true, false, false, false, true));
+    assert!(! should_auto_wake_subagent(false, true, false, true, false, false, false, true));
+    assert!(! should_auto_wake_subagent(true, true, false, false, false, false, false, true));
+    assert!(should_auto_wake_subagent(true, true, false, true, false, false, false, true));
+}
+#[test]
+fn should_auto_wake_subagent_respects_surface_completion() {
+    assert!(! should_auto_wake_subagent(true, false, false, true, false, false, false, true));
 }
 /// A cancelled child never wakes the parent — most acutely the Ctrl+C
 /// race where `ParentGone` backgrounds a foreground child moments before
 /// the teardown cancel lands its token.
 #[test]
 fn should_auto_wake_subagent_refuses_cancelled_results() {
-    assert!(! should_auto_wake_subagent(true, true, true, false, false, false, true));
+    assert!(! should_auto_wake_subagent(true, true, true, true, false, false, false, true));
 }
 #[test]
 fn should_auto_wake_subagent_suppressed_by_block_waited_or_killed() {
-    assert!(! should_auto_wake_subagent(true, false, true, true, false, false, true));
-    assert!(! should_auto_wake_subagent(true, false, true, false, true, false, true));
-    assert!(! should_auto_wake_subagent(true, false, true, true, true, false, true));
+    assert!(! should_auto_wake_subagent(true, true, false, true, true, false, false, true));
+    assert!(! should_auto_wake_subagent(true, true, false, true, false, true, false, true));
+    assert!(! should_auto_wake_subagent(true, true, false, true, true, true, false, true));
 }
 /// A goal loop active in the parent suppresses the subagent
 /// auto-wake synthetic prompt — the structural sibling of the bash gate.
@@ -556,18 +670,19 @@ fn should_auto_wake_subagent_suppressed_by_block_waited_or_killed() {
 /// per-tool-call / between-turn surfaces stay free to drain the completion.
 #[test]
 fn should_auto_wake_subagent_suppressed_by_goal_loop() {
-    assert!(! should_auto_wake_subagent(true, false, true, false, false, true, true));
-    assert!(should_auto_wake_subagent(true, false, true, false, false, false, true));
+    assert!(! should_auto_wake_subagent(true, true, false, true, false, false, true, true));
+    assert!(should_auto_wake_subagent(true, true, false, true, false, false, false, true));
 }
 #[test]
 fn should_auto_wake_subagent_requires_open_parent_channel() {
-    assert!(! should_auto_wake_subagent(true, false, true, false, false, false, false));
+    assert!(! should_auto_wake_subagent(true, true, false, true, false, false, false, false));
 }
 fn auto_wake_test_request(id: &str) -> SubagentRequest {
     let (result_tx, _result_rx) = oneshot::channel();
     SubagentRequest {
         id: id.into(),
         prompt: String::new(),
+        json_schema: None,
         description: "explore".into(),
         subagent_type: "general-purpose".into(),
         parent_session_id: "parent".into(),
@@ -578,8 +693,23 @@ fn auto_wake_test_request(id: &str) -> SubagentRequest {
         run_in_background: true,
         surface_completion: true,
         fork_context: false,
+        strict_read_only: false,
+        strict_workflow_write: false,
         result_tx,
     }
+}
+#[test]
+fn abandoned_internal_spawn_is_skipped_before_registration() {
+    let mut request = auto_wake_test_request("abandoned");
+    request.surface_completion = false;
+    assert!(super::handle_request::should_skip_abandoned_internal_spawn(
+        &request
+    ));
+
+    request.surface_completion = true;
+    assert!(!super::handle_request::should_skip_abandoned_internal_spawn(
+        &request
+    ));
 }
 /// Behavior-level: the action half of the subagent auto-wake.
 /// When the gate lets it run, `inject_subagent_completed_prompt` sends the
@@ -1876,6 +2006,7 @@ fn bootstrap_test_request(fork_context: bool) -> SubagentRequest {
     SubagentRequest {
         id: "bootstrap-test".into(),
         prompt: "plan".into(),
+        json_schema: None,
         description: "d".into(),
         subagent_type: "general-purpose".into(),
         parent_session_id: "parent".into(),
@@ -1886,6 +2017,8 @@ fn bootstrap_test_request(fork_context: bool) -> SubagentRequest {
         run_in_background: false,
         surface_completion: false,
         fork_context,
+        strict_read_only: false,
+        strict_workflow_write: false,
         result_tx,
     }
 }

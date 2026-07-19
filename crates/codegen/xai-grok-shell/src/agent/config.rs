@@ -3268,8 +3268,13 @@ pub fn resolve_model_list(
     }
     apply_global_extra_headers(&mut resolved, &cfg.models);
     apply_global_scalar_defaults(&mut resolved, &cfg.models);
-    for entry in resolved.values_mut() {
-        apply_vendor_reasoning_efforts(&mut entry.info);
+    for (id, entry) in &mut resolved {
+        let explicitly_disabled = cfg
+            .config_models
+            .get(id)
+            .and_then(|model| model.supports_reasoning_effort)
+            == Some(false);
+        apply_vendor_reasoning_efforts(&mut entry.info, explicitly_disabled);
         entry.info.derive_reasoning_effort_fields();
     }
     resolved
@@ -3278,8 +3283,8 @@ pub fn resolve_model_list(
 /// OpenAI-compatible gateways often return only bare model ids from
 /// `/v1/models`. Restore the effort picker for Gemini and Claude families
 /// without overriding explicit provider metadata or user configuration.
-fn apply_vendor_reasoning_efforts(info: &mut ModelInfo) {
-    if !info.reasoning_efforts.is_empty() {
+fn apply_vendor_reasoning_efforts(info: &mut ModelInfo, explicitly_disabled: bool) {
+    if explicitly_disabled || !info.reasoning_efforts.is_empty() {
         return;
     }
     let model = info.model.to_ascii_lowercase();
@@ -11263,6 +11268,9 @@ default = "grok-4.5"
             model = "anthropic/claude-sonnet-4-6"
             [model.other]
             model = "other-model"
+            [model.disabled-gemini]
+            model = "gemini-disabled"
+            supports_reasoning_effort = false
             "#,
         )
         .unwrap();
@@ -11280,6 +11288,13 @@ default = "grok-4.5"
             assert_eq!(ids, ["low", "medium", "high"]);
         }
         assert!(resolved["other"].info.reasoning_efforts.is_empty());
+        assert!(!resolved["disabled-gemini"].info.supports_reasoning_effort);
+        assert!(
+            resolved["disabled-gemini"]
+                .info
+                .reasoning_efforts
+                .is_empty()
+        );
     }
     #[test]
     fn resolve_model_list_config_reasoning_efforts_beats_remote() {

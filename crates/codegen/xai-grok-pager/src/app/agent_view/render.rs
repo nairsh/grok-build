@@ -26,7 +26,7 @@ use crate::views::shortcuts_bar::{HintItem, PendingHint, ShortcutsBar};
 use crate::views::{agent, turn_status};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 use std::collections::HashSet;
@@ -2177,6 +2177,29 @@ impl AgentView {
                 color: Some(theme.accent_system),
                 bold: false,
             });
+        }
+        if self.session.models.is_fast() {
+            mode_flags_vec.push(PromptFlag {
+                text: "fast",
+                color: Some(Color::Yellow),
+                bold: false,
+            });
+        }
+        if self.workflows.ultracode_enabled {
+            mode_flags_vec.push(PromptFlag {
+                text: "ultracode",
+                color: Some(theme.accent_user),
+                bold: true,
+            });
+        } else {
+            let active_workflows = self.workflows.active_count();
+            if active_workflows > 0 {
+                mode_flags_vec.push(PromptFlag {
+                    text: "workflow",
+                    color: Some(theme.accent_user),
+                    bold: false,
+                });
+            }
         }
         let mode_flags: &[PromptFlag] = &mode_flags_vec;
         let multiline = self.multiline_mode;

@@ -611,6 +611,10 @@ pub enum Action {
     OpenProviderLogin {
         provider: Option<String>,
     },
+    /// Open the provider manager in credential-removal mode.
+    OpenProviderLogout,
+    /// Remove the active xAI session without replacing the provider manager.
+    LogoutXaiFromProviderModal,
     /// Start browser-based subscription setup without suspending the TUI.
     RunProviderLogin {
         provider: String,
@@ -661,6 +665,24 @@ pub enum Action {
     /// tasks as a system block (`/tasks`). The surface minimal mode uses in
     /// place of the `TasksPane`.
     ShowTasks,
+    /// Open the native Dynamic Workflows / UltraCode control center.
+    OpenWorkflows,
+    /// Execute a control-center request against the owning session.
+    WorkflowRequest(crate::views::workflows_modal::WorkflowUiRequest),
+    /// Ask the model to preview and run a saved workflow.
+    RunSavedWorkflow(String),
+    /// Apply a completed write worker's isolated worktree to this checkout.
+    ApplyWorkflowWorktree {
+        worktree_path: String,
+    },
+    /// Load the isolated worker's changed files and patches for native review.
+    ReviewWorkflowWorktree {
+        run_id: String,
+        worker_id: String,
+        worktree_path: String,
+    },
+    /// Enable, disable, or toggle UltraCode for this session.
+    SetUltracode(Option<bool>),
     /// Show the current plan: preview popover if exists, toast if not.
     ShowPlan,
     /// Enter plan mode. If a description is provided, also start a turn
@@ -1125,8 +1147,8 @@ impl PlanModeKind {
 /// variant needs no agent/schema change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelTrigger {
-    /// Wire value `"esc"` (set only by the Esc cancel-retry while
-    /// TurnCancelling; a bare Esc no longer starts a cancel).
+    /// Wire value `"esc"` (set by a confirmed double-Esc interrupt or an
+    /// Esc cancel-retry while TurnCancelling).
     Esc,
     /// `Ctrl+C` pressed (the default cancel keybinding).
     CtrlC,
@@ -1336,13 +1358,31 @@ pub enum ProbedAttachment {
 }
 #[derive(Debug)]
 pub enum Effect {
+    WorkflowRequest {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        request: crate::views::workflows_modal::WorkflowUiRequest,
+    },
+    ApplyWorkflowWorktree {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        worktree_path: String,
+    },
+    ReviewWorkflowWorktree {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        worktree_path: String,
+    },
     /// Authenticate a subscription provider in the system browser while the
     /// current TUI and session remain alive.
     ProviderOauthLogin { agent_id: AgentId, provider: String },
+    /// Remove the current xAI session from the provider manager.
+    ProviderXaiLogout { agent_id: AgentId },
     /// Fetch an OpenAI-compatible `/models` catalog without suspending the
     /// running TUI. The API key is kept only for this in-flight request.
     ProviderModelDiscovery {
         agent_id: AgentId,
+        request_id: u64,
         base_url: String,
         api_key: String,
     },
@@ -2077,15 +2117,34 @@ pub enum SubagentKillOutcome {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    WorkflowResponse {
+        agent_id: AgentId,
+        request: crate::views::workflows_modal::WorkflowUiRequest,
+        result: Result<serde_json::Value, String>,
+    },
+    WorkflowWorktreeApplied {
+        agent_id: AgentId,
+        result: Result<serde_json::Value, String>,
+    },
+    WorkflowWorktreeReviewed {
+        agent_id: AgentId,
+        result: Result<serde_json::Value, String>,
+    },
     /// Browser-based provider setup completed (or failed) while Atlas stayed open.
     ProviderOauthLoginComplete {
         agent_id: AgentId,
         provider: String,
         result: Result<(), String>,
     },
+    /// The xAI credential was removed from the provider manager.
+    ProviderXaiLogoutComplete {
+        agent_id: AgentId,
+        result: Result<(), String>,
+    },
     /// OpenAI-compatible model discovery completed for the native login form.
     ProviderModelDiscoveryComplete {
         agent_id: AgentId,
+        request_id: u64,
         result: Result<Vec<String>, String>,
     },
     /// Session was created successfully.

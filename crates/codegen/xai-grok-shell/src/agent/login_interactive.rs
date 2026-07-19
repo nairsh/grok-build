@@ -210,10 +210,15 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
     let key = prompt_secret("API key (input hidden): ").await?;
     let key = key.trim().to_owned();
     anyhow::ensure!(!key.is_empty(), "API key must not be empty");
-    let discovered_models = if matches!(
-        connection.adapter,
-        Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
-    ) {
+    // OpenRouter's public catalog is intentionally not fetched: it is far too
+    // large for a useful local model picker. Ask for the explicit subset the
+    // user wants to enable instead.
+    let openrouter = provider_id == "openrouter";
+    let discovered_models = if !openrouter
+        && matches!(
+            connection.adapter,
+            Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
+        ) {
         match discover_openai_models(&connection, &key).await {
             Ok(models) if !models.is_empty() => {
                 println!("\nFound {} models at this endpoint.", models.len());
@@ -229,32 +234,51 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
         Vec::new()
     };
     let discovered_default = discovered_models.first().map(String::as_str);
-    let model_prompt = match default_model {
-        Some(default) => format!("Model id [{}]: ", discovered_default.unwrap_or(default)),
-        None if discovered_default.is_some() => {
-            format!(
-                "Model id [{}]: ",
-                discovered_default.expect("checked above")
-            )
+    let model_prompt = if openrouter {
+        "Model ids (comma-separated): ".to_owned()
+    } else {
+        match default_model {
+            Some(default) => format!("Model id [{}]: ", discovered_default.unwrap_or(default)),
+            None if discovered_default.is_some() => {
+                format!(
+                    "Model id [{}]: ",
+                    discovered_default.expect("checked above")
+                )
+            }
+            None => "Model id (the exact provider model name): ".to_owned(),
         }
-        None => "Model id (the exact provider model name): ".to_owned(),
     };
     let model = prompt_line(&model_prompt).await?;
     let model = match (model.trim(), discovered_default.or(default_model)) {
+        ("", _) if openrouter => String::new(),
         ("", Some(default)) => default.to_owned(),
         (value, _) => value.to_owned(),
     };
-    anyhow::ensure!(!model.is_empty(), "model id must not be empty");
-
-    let models = if discovered_models.is_empty() {
-        vec![model.clone()]
+    let models = if openrouter {
+        let mut seen = std::collections::HashSet::new();
+        let requested = model
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .filter(|id| seen.insert((*id).to_owned()))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        anyhow::ensure!(!requested.is_empty(), "at least one model id is required");
+        requested
     } else {
-        discovered_models
+        anyhow::ensure!(!model.is_empty(), "model id must not be empty");
+        if discovered_models.is_empty() {
+            vec![model.clone()]
+        } else {
+            discovered_models
+        }
     };
+
     save_api_key_connection(&id, &key, &models, connection)?;
     println!(
-        "\n✓ Connected \"{id}\" using model \"{model}\".\n  Run `atlas` to start, \
-         or `atlas models` to verify the model list."
+        "\n✓ Connected \"{id}\" using {} model(s).\n  Run `atlas` to start, \
+         or `atlas models` to verify the model list.",
+        models.len()
     );
     Ok(())
 }
@@ -323,6 +347,40 @@ pub fn save_api_key_connection_for_provider(
         connection.base_url = Some(base_url.to_owned());
     }
     save_api_key_connection(connection_id, api_key, models, connection)
+}
+
+/// Remove a saved credential and any generated connection/model entries that
+/// reference an API key by the same id. OAuth credentials do not generate
+/// config entries, so logging out of them only updates the credential store.
+pub fn remove_saved_credential(credential_id: &str) -> anyhow::Result<()> {
+    let credential_path = CredentialStore::default_path();
+    let config_path = xai_grok_config::grok_home().join("config.toml");
+    remove_saved_credential_at(&credential_path, &config_path, credential_id)
+}
+
+fn remove_saved_credential_at(
+    credential_path: &std::path::Path,
+    config_path: &std::path::Path,
+    credential_id: &str,
+) -> anyhow::Result<()> {
+    let mut store = CredentialStore::load(credential_path)?;
+    let removed = store
+        .remove(credential_id)
+        .ok_or_else(|| anyhow::anyhow!("credential no longer exists"))?;
+    store.save(credential_path)?;
+
+    if matches!(removed, Credential::ApiKey { .. })
+        && let Err(error) = remove_provider_config_at(config_path, credential_id)
+    {
+        store.put(credential_id, removed);
+        if let Err(rollback_error) = store.save(credential_path) {
+            return Err(anyhow::anyhow!(
+                "could not update config: {error}; restoring the credential also failed: {rollback_error}"
+            ));
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Complete a subscription login from an embedded UI without requiring that UI
@@ -528,6 +586,64 @@ fn save_provider_config_models_at(
     Ok(())
 }
 
+fn remove_provider_config_at(path: &std::path::Path, credential_id: &str) -> anyhow::Result<()> {
+    use toml_edit::{DocumentMut, Item};
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut document: DocumentMut = content.parse().map_err(|error| {
+        anyhow::anyhow!("config.toml is invalid; refusing to overwrite it: {error}")
+    })?;
+    let remove_connection = document
+        .get("connection")
+        .and_then(Item::as_table)
+        .and_then(|connections| connections.get(credential_id))
+        .and_then(Item::as_table)
+        .and_then(|connection| connection.get("credential"))
+        .and_then(Item::as_value)
+        .and_then(toml_edit::Value::as_inline_table)
+        .and_then(|credential| credential.get("named"))
+        .and_then(toml_edit::Value::as_str)
+        == Some(credential_id);
+
+    let mut changed = false;
+    if remove_connection
+        && let Some(connections) = document.get_mut("connection").and_then(Item::as_table_mut)
+    {
+        connections.remove(credential_id);
+        changed = true;
+    }
+
+    if let Some(models) = document.get_mut("model").and_then(Item::as_table_mut) {
+        let generated_models = models
+            .iter()
+            .filter_map(|(id, item)| {
+                let connection = item.as_table()?.get("connection").and_then(Item::as_str)?;
+                (connection == credential_id).then(|| id.to_owned())
+            })
+            .collect::<Vec<_>>();
+        for id in generated_models {
+            models.remove(&id);
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok(());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("config path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let temporary = path.with_extension(format!("toml.tmp-{}", std::process::id()));
+    std::fs::write(&temporary, document.to_string())?;
+    std::fs::rename(temporary, path)?;
+    Ok(())
+}
+
 /// Print `prompt` (no newline) and read one line from stdin.
 async fn prompt_line(prompt: &str) -> anyhow::Result<String> {
     print!("{prompt}");
@@ -613,6 +729,49 @@ mod tests {
             .expect("model is configured");
         assert_eq!(model.connection.as_deref(), Some("openai-work"));
         assert_eq!(model.model.as_deref(), Some("gpt-test"));
+    }
+
+    #[test]
+    fn removing_api_key_credential_cleans_generated_config_entries() {
+        let directory = tempfile::tempdir().unwrap();
+        let credential_path = directory.path().join("credentials.json");
+        let config_path = directory.path().join("config.toml");
+        std::fs::write(&config_path, "[ui]\nshow_timestamps = true\n").unwrap();
+        let mut connection = crate::agent::connection::builtin_connections()["openai"].clone();
+        connection.credential = CredentialRef::Named("openai-work".to_owned());
+        save_provider_config_models_at(
+            &config_path,
+            "openai-work",
+            &["gpt-one".to_owned(), "gpt-two".to_owned()],
+            &connection,
+        )
+        .unwrap();
+        let mut store = CredentialStore::default();
+        store.put(
+            "openai-work",
+            Credential::ApiKey {
+                key: "secret".to_owned(),
+            },
+        );
+        store.save(&credential_path).unwrap();
+
+        remove_saved_credential_at(&credential_path, &config_path, "openai-work").unwrap();
+
+        let store = CredentialStore::load(&credential_path).unwrap();
+        assert!(store.get("openai-work").is_none());
+        let raw: toml::Value =
+            toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(raw["ui"]["show_timestamps"].as_bool(), Some(true));
+        assert!(
+            raw.get("connection")
+                .and_then(|value| value.get("openai-work"))
+                .is_none()
+        );
+        assert!(
+            raw.get("model")
+                .and_then(toml::Value::as_table)
+                .is_none_or(toml::map::Map::is_empty)
+        );
     }
 
     #[test]

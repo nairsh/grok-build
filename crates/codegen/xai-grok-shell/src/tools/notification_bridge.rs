@@ -799,6 +799,22 @@ async fn handle_notification(
                     ));
             }
         }
+
+        ToolNotification::WorkflowProgress(progress) => {
+            if let Ok(params) = serde_json::to_value(serde_json::json!({
+                "sessionId": config.session_id.0.as_ref(),
+                "snapshot": progress.snapshot,
+            }))
+            .and_then(|value| serde_json::value::to_raw_value(&value))
+            {
+                config
+                    .gateway
+                    .forward_fire_and_forget(acp::ExtNotification::new(
+                        "x.ai/workflow_progress",
+                        params.into(),
+                    ));
+            }
+        }
     }
 }
 

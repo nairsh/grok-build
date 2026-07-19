@@ -3205,6 +3205,7 @@ impl acp::Agent for MvpAgent {
                 )
             }
             "x.ai/interject" => crate::extensions::interject::handle(self, &args).await,
+            "x.ai/workflow/control" => crate::extensions::workflow::handle(self, &args).await,
             "x.ai/feedback" | "x.ai/feedback/dismiss" | "x.ai/btw" => {
                 crate::extensions::feedback::handle(self, &args).await
             }

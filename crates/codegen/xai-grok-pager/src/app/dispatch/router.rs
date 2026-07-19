@@ -886,6 +886,142 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::ShowUsage => dispatch_show_usage(app),
         Action::ShowQueue => dispatch_show_queue(app),
         Action::ShowTasks => dispatch_show_tasks(app),
+        Action::OpenWorkflows => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::Workflows {
+                state: crate::views::workflows_modal::WorkflowsModalState::new(
+                    &agent.workflows,
+                    &agent.session.cwd,
+                ),
+            });
+            vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id,
+                request: crate::views::workflows_modal::WorkflowUiRequest {
+                    action: crate::views::workflows_modal::WorkflowUiAction::List,
+                    run_id: None,
+                    worker_id: None,
+                    enabled: None,
+                },
+            }]
+        }
+        Action::WorkflowRequest(request) => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id,
+                request,
+            }]
+        }
+        Action::RunSavedWorkflow(name) => dispatch_send_prompt(
+            app,
+            format!(
+                "Run the saved Dynamic Workflow `{name}`. Call workflow_preview first, show me its validated plan and limits through the approval UI, then execute it with the exact approval hash."
+            ),
+        ),
+        Action::ApplyWorkflowWorktree { worktree_path } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::ApplyWorkflowWorktree {
+                agent_id: id,
+                session_id,
+                worktree_path,
+            }]
+        }
+        Action::ReviewWorkflowWorktree {
+            run_id: _,
+            worker_id: _,
+            worktree_path,
+        } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::ReviewWorkflowWorktree {
+                agent_id: id,
+                session_id,
+                worktree_path,
+            }]
+        }
+        Action::SetUltracode(requested) => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            let enabled = requested.unwrap_or(!agent.workflows.ultracode_enabled);
+            agent.workflows.ultracode_enabled = enabled;
+            if let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                agent.active_modal.as_mut()
+            {
+                state.ultracode_enabled = enabled;
+                state.pending_action = Some("set_ultracode".into());
+                state.message = None;
+            }
+            agent.show_toast(if enabled {
+                "UltraCode enabled · xhigh reasoning"
+            } else {
+                "UltraCode disabled"
+            });
+            let mut effects = vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id: session_id.clone(),
+                request: crate::views::workflows_modal::WorkflowUiRequest {
+                    action: crate::views::workflows_modal::WorkflowUiAction::SetUltracode,
+                    run_id: None,
+                    worker_id: None,
+                    enabled: Some(enabled),
+                },
+            }];
+            if enabled
+                && let Some(model_id) = agent.session.models.current.clone()
+                && agent.session.models.reasoning_effort
+                    != Some(xai_grok_shell::sampling::types::ReasoningEffort::Xhigh)
+            {
+                agent.session.model_switch_pending = true;
+                effects.push(Effect::SwitchModel {
+                    agent_id: id,
+                    session_id,
+                    model_id,
+                    effort: Some(xai_grok_shell::sampling::types::ReasoningEffort::Xhigh),
+                    service_tier_change: None,
+                    prev_model_id: None,
+                });
+            }
+            effects
+        }
         Action::ShowPlan => dispatch_show_plan(app),
         Action::EnterPlanMode { description } => dispatch_enter_plan_mode(app, description),
         Action::SetPlanMode(kind) => set_plan_mode(app, kind),
@@ -1163,6 +1299,20 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             });
             vec![]
         }
+        Action::OpenProviderLogout => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::ProviderLogin {
+                state: Box::new(
+                    crate::views::provider_login_modal::ProviderLoginModalState::new_logout(),
+                ),
+            });
+            vec![]
+        }
         Action::RunProviderLogin { provider } => {
             let ActiveView::Agent(agent_id) = app.active_view else {
                 return vec![];
@@ -1183,6 +1333,12 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 _ => vec![],
             }
         }
+        Action::LogoutXaiFromProviderModal => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            vec![Effect::ProviderXaiLogout { agent_id }]
+        }
         Action::DiscoverProviderModels => {
             let ActiveView::Agent(agent_id) = app.active_view else {
                 return vec![];
@@ -1195,11 +1351,12 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             else {
                 return vec![];
             };
-            let Some((base_url, api_key)) = state.model_discovery_credentials() else {
+            let Some((request_id, base_url, api_key)) = state.model_discovery_credentials() else {
                 return vec![];
             };
             vec![Effect::ProviderModelDiscovery {
                 agent_id,
+                request_id,
                 base_url,
                 api_key,
             }]

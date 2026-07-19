@@ -404,6 +404,57 @@ impl std::fmt::Debug for Resources {
 /// Current working directory for the session.
 #[derive(Debug, Clone)]
 pub struct Cwd(pub PathBuf);
+
+/// Internal child-session marker used to fail closed around strict workflow
+/// file access. It can only narrow access; setting it never grants a tool.
+pub const INTERNAL_WORKFLOW_FILESYSTEM_ROOT: &str = "GROK_INTERNAL_WORKFLOW_FILESYSTEM_ROOT";
+
+/// Reject strict workflow file operations that escape the worker's repository
+/// root, including through `..` components or symlinks.
+pub fn enforce_workflow_filesystem_root(
+    resources: &Resources,
+    target: &std::path::Path,
+) -> Result<(), xai_tool_runtime::ToolError> {
+    let Some(raw_root) = resources
+        .get::<SessionEnv>()
+        .and_then(|env| env.0.get(INTERNAL_WORKFLOW_FILESYSTEM_ROOT))
+    else {
+        return Ok(());
+    };
+    let root = dunce::canonicalize(raw_root).map_err(|error| {
+        xai_tool_runtime::ToolError::custom(
+            "workflow_filesystem_scope",
+            format!("workflow filesystem root is unavailable: {error}"),
+        )
+    })?;
+    let mut existing = target;
+    while !existing.exists() {
+        existing = existing.parent().ok_or_else(|| {
+            xai_tool_runtime::ToolError::custom(
+                "workflow_filesystem_scope",
+                format!("path '{}' has no existing ancestor", target.display()),
+            )
+        })?;
+    }
+    let canonical = dunce::canonicalize(existing).map_err(|error| {
+        xai_tool_runtime::ToolError::custom(
+            "workflow_filesystem_scope",
+            format!("failed to resolve '{}': {error}", target.display()),
+        )
+    })?;
+    if canonical.starts_with(&root) {
+        Ok(())
+    } else {
+        Err(xai_tool_runtime::ToolError::custom(
+            "workflow_filesystem_scope",
+            format!(
+                "strict workflow worker cannot access '{}' outside '{}'",
+                target.display(),
+                root.display()
+            ),
+        ))
+    }
+}
 /// Absolute path to the plan file for this session.
 ///
 /// Set by the session layer (from `PlanModeTracker::plan_file_path()`);
@@ -1585,6 +1636,34 @@ mod tests {
         assert_eq!(
             result,
             std::path::PathBuf::from("/worktree/abc/path/with\"quote/file.rs"),
+        );
+    }
+
+    #[test]
+    fn strict_workflow_filesystem_root_blocks_parent_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let mut env = std::collections::HashMap::new();
+        env.insert(
+            super::INTERNAL_WORKFLOW_FILESYSTEM_ROOT.to_string(),
+            root.to_string_lossy().into_owned(),
+        );
+        let mut resources = super::Resources::new();
+        resources.insert(super::SessionEnv(std::sync::Arc::new(env)));
+
+        assert!(
+            super::enforce_workflow_filesystem_root(&resources, &root.join("src/new.rs")).is_ok()
+        );
+        assert!(super::enforce_workflow_filesystem_root(&resources, &outside).is_err());
+        assert!(
+            super::enforce_workflow_filesystem_root(
+                &resources,
+                &root.join("src/../../outside/file.rs")
+            )
+            .is_err()
         );
     }
 }

@@ -42,6 +42,100 @@ pub(crate) fn execute(
     let mut meta = EffectMeta::default();
     let effect_is_send_now = matches!(effect, Effect::SendPromptNow { .. });
     match effect {
+        Effect::WorkflowRequest {
+            agent_id,
+            session_id,
+            request,
+        } => {
+            let tx = acp_tx.clone();
+            let request_for_result = request.clone();
+            tasks.spawn(async move {
+                let mut payload = serde_json::to_value(&request).unwrap_or_default();
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert(
+                        "sessionId".into(),
+                        serde_json::Value::String(session_id.0.to_string()),
+                    );
+                }
+                let ext = acp::ExtRequest::new(
+                    "x.ai/workflow/control",
+                    serde_json::value::to_raw_value(&payload)
+                        .expect("serialize workflow control request")
+                        .into(),
+                );
+                let result = acp_send(ext, &tx)
+                    .await
+                    .map_err(|error| sanitize_user_error(&error.to_string()))
+                    .and_then(|response| {
+                        serde_json::from_str(response.0.get())
+                            .map_err(|error| sanitize_user_error(&error.to_string()))
+                    });
+                TaskResult::WorkflowResponse {
+                    agent_id,
+                    request: request_for_result,
+                    result,
+                }
+            });
+        }
+        Effect::ApplyWorkflowWorktree {
+            agent_id,
+            session_id,
+            worktree_path,
+        } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                let payload = serde_json::json!({
+                    "sessionId": session_id.0.as_ref(),
+                    "worktreePath": worktree_path,
+                    "mode": "merge",
+                });
+                let ext = acp::ExtRequest::new(
+                    "x.ai/git/worktree/apply",
+                    serde_json::value::to_raw_value(&payload)
+                        .expect("serialize workflow worktree apply request")
+                        .into(),
+                );
+                let result = acp_send(ext, &tx)
+                    .await
+                    .map_err(|error| sanitize_user_error(&error.to_string()))
+                    .and_then(|response| {
+                        serde_json::from_str(response.0.get())
+                            .map_err(|error| sanitize_user_error(&error.to_string()))
+                    });
+                TaskResult::WorkflowWorktreeApplied { agent_id, result }
+            });
+        }
+        Effect::ReviewWorkflowWorktree {
+            agent_id,
+            session_id,
+            worktree_path,
+        } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                let payload = serde_json::json!({
+                    "sessionId": session_id.0.as_ref(),
+                    "gitRoot": worktree_path,
+                    "includeUntracked": true,
+                    "includeStats": true,
+                    "includePatches": true,
+                    "ignoreSubmodules": true,
+                });
+                let ext = acp::ExtRequest::new(
+                    "x.ai/git/status",
+                    serde_json::value::to_raw_value(&payload)
+                        .expect("serialize workflow worktree review request")
+                        .into(),
+                );
+                let result = acp_send(ext, &tx)
+                    .await
+                    .map_err(|error| sanitize_user_error(&error.to_string()))
+                    .and_then(|response| {
+                        serde_json::from_str(response.0.get())
+                            .map_err(|error| sanitize_user_error(&error.to_string()))
+                    });
+                TaskResult::WorkflowWorktreeReviewed { agent_id, result }
+            });
+        }
         Effect::ProviderOauthLogin { agent_id, provider } => {
             tasks.spawn(async move {
                 use xai_grok_shell::agent::login_interactive::login_subscription_and_store;
@@ -67,8 +161,25 @@ pub(crate) fn execute(
                 }
             });
         }
+        Effect::ProviderXaiLogout { agent_id } => {
+            let tx = acp_tx.clone();
+            tasks.spawn(async move {
+                let request = acp::ExtRequest::new(
+                    "x.ai/auth/logout",
+                    serde_json::value::to_raw_value(&serde_json::json!({}))
+                        .expect("serialize auth/logout params")
+                        .into(),
+                );
+                let result = acp_send(request, &tx)
+                    .await
+                    .map(|_| ())
+                    .map_err(|error| sanitize_user_error(&error.to_string()));
+                TaskResult::ProviderXaiLogoutComplete { agent_id, result }
+            });
+        }
         Effect::ProviderModelDiscovery {
             agent_id,
+            request_id,
             base_url,
             api_key,
         } => {
@@ -78,7 +189,11 @@ pub(crate) fn execute(
                 )
                 .await
                 .map_err(|error| sanitize_user_error(&error.to_string()));
-                TaskResult::ProviderModelDiscoveryComplete { agent_id, result }
+                TaskResult::ProviderModelDiscoveryComplete {
+                    agent_id,
+                    request_id,
+                    result,
+                }
             });
         }
         Effect::RegisterActiveSession { session_id, cwd } => {
