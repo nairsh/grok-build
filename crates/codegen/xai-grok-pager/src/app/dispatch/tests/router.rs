@@ -654,6 +654,7 @@ fn switch_model_dispatch_produces_effect_and_sets_pending() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -675,6 +676,7 @@ fn switch_model_allowed_when_agent_chat_kind() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -695,6 +697,7 @@ fn switch_model_allowed_when_app_chat_mode() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -1185,6 +1188,7 @@ fn deferred_switch_overwritten_by_second_switch() {
         Action::SwitchModel {
             model_id: model_a,
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -1192,6 +1196,7 @@ fn deferred_switch_overwritten_by_second_switch() {
         Action::SwitchModel {
             model_id: model_b.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );

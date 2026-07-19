@@ -171,6 +171,10 @@ pub fn howto_list_modal(previous_palette: Option<PaletteSnapshot>) -> ActiveModa
 /// Each variant wraps a `ModalConfirmation<R>` with its concrete result
 /// type plus any context needed for resolution (e.g., pending focus target).
 pub enum ActiveModal {
+    /// Dynamic Workflows / UltraCode control center.
+    Workflows {
+        state: crate::views::workflows_modal::WorkflowsModalState,
+    },
     /// Confirmation for leaving a dirty queued-prompt edit.
     EditConfirm {
         modal: ModalConfirmation<EditConfirmResult>,
@@ -289,6 +293,10 @@ pub enum ActiveModal {
     /// Settings modal (F2, /settings, palette). Boxed — large state.
     Settings {
         state: Box<crate::views::settings_modal::SettingsModalState>,
+    },
+    /// Native provider connection and credential-management UI (`/login`).
+    ProviderLogin {
+        state: Box<crate::views::provider_login_modal::ProviderLoginModalState>,
     },
     /// Reset-settings confirmation, stacked above Settings.
     ///
@@ -605,6 +613,7 @@ impl ActiveModal {
                 .map(|o| (o.key, o.result.label()))
                 .collect(),
             ActiveModal::CommandPalette { .. }
+            | ActiveModal::Workflows { .. }
             | ActiveModal::ArgPicker { .. }
             | ActiveModal::SessionPicker { .. }
             | ActiveModal::DocPicker { .. }
@@ -612,6 +621,7 @@ impl ActiveModal {
             | ActiveModal::ShortcutsHelp { .. }
             | ActiveModal::MemoryBrowser { .. }
             | ActiveModal::Settings { .. }
+            | ActiveModal::ProviderLogin { .. }
             | ActiveModal::RememberNoteReview { .. } => vec![],
         }
     }
@@ -624,6 +634,7 @@ impl ActiveModal {
                     "Save changes?"
                 }
             }
+            ActiveModal::Workflows { .. } => "Workflows",
             ActiveModal::CommandPalette { .. } => "Commands",
             ActiveModal::SessionPicker { .. } => "Resume session",
             ActiveModal::ArgPicker {
@@ -641,6 +652,7 @@ impl ActiveModal {
             ActiveModal::ShortcutsHelp { .. } => "Keyboard Shortcuts",
             ActiveModal::MemoryBrowser { .. } => "Memory",
             ActiveModal::Settings { .. } => crate::views::settings_modal::MODAL_TITLE,
+            ActiveModal::ProviderLogin { .. } => "Providers & login",
             ActiveModal::ResetSettingsConfirm { .. } => "Reset setting?",
             ActiveModal::RememberNoteReview { .. } => "Memory Note",
         }

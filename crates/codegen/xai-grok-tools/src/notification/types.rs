@@ -354,6 +354,13 @@ pub struct MonitorEvent {
     pub owner_session_id: Option<String>,
 }
 
+/// Durable lifecycle and progress state for a dynamic workflow run.
+#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WorkflowProgress {
+    pub snapshot: crate::implementations::grok_build::workflow::supervisor::WorkflowRunSnapshot,
+}
+
 /// A notification emitted by a tool during or after execution.
 /// These are sent to external consumers (TUI, logging, etc.) to provide
 /// real-time visibility into tool execution.
@@ -417,6 +424,9 @@ pub enum ToolNotification {
 
     /// A streaming event from a monitor background process.
     MonitorEvent(MonitorEvent),
+
+    /// A dynamic workflow was started, progressed, stopped, or recovered.
+    WorkflowProgress(WorkflowProgress),
 }
 
 /// Single source of truth for the `(variant tag => payload type)` mapping of
@@ -478,6 +488,7 @@ notification_variants! {
     ScheduledTaskRemoved => ScheduledTaskRemoved,
     ScheduledTaskCreated => ScheduledTaskCreated,
     MonitorEvent => MonitorEvent,
+    WorkflowProgress => WorkflowProgress,
 }
 
 /// Handle for sending notifications to consumers.
@@ -638,6 +649,10 @@ impl ToolNotificationHandle {
 
     pub fn send_monitor_event(&self, event: MonitorEvent) {
         self.send(ToolNotification::MonitorEvent(event));
+    }
+
+    pub fn send_workflow_progress(&self, progress: WorkflowProgress) {
+        self.send(ToolNotification::WorkflowProgress(progress));
     }
 }
 

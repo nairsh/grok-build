@@ -296,6 +296,7 @@ impl xai_tool_runtime::Tool for TaskTool {
         let request = SubagentRequest {
             id: id.clone(),
             prompt: input.prompt.clone(),
+            json_schema: None,
             description: input.description.clone(),
             subagent_type: input.subagent_type.clone(),
             parent_session_id,
@@ -318,6 +319,8 @@ impl xai_tool_runtime::Tool for TaskTool {
             // Model-spawned subagents must still appear in the idle reminder.
             surface_completion: true,
             fork_context: false,
+            strict_read_only: false,
+            strict_workflow_write: false,
             result_tx,
         };
 

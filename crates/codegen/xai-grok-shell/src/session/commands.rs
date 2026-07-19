@@ -160,6 +160,9 @@ pub enum SessionCommand {
     },
     SetSessionModel {
         sampling_config: xai_grok_sampler::SamplerConfig,
+        /// `Some(None)` disables a selected service tier; `None` preserves the
+        /// session's current tier while changing models.
+        service_tier_override: Option<Option<String>>,
         use_concise: bool,
         /// When `false`, skip the system prompt rewrite (concise/default swap).
         /// Set to `false` for forked sessions so mid-session model switches
@@ -447,6 +450,11 @@ pub enum SessionCommand {
     /// Routes through the ToolBridge's TerminalBackend.
     ListTasks {
         respond_to: oneshot::Sender<Option<Vec<xai_grok_tools::types::TaskSnapshot>>>,
+    },
+    /// Inspect or control this session's Dynamic Workflow supervisor.
+    WorkflowControl {
+        request: crate::extensions::workflow::WorkflowControlRequest,
+        respond_to: oneshot::Sender<Result<serde_json::Value, String>>,
     },
     /// Query whether the session has work in flight: a running turn
     /// (`running_task.is_some()`) **or** queued inputs

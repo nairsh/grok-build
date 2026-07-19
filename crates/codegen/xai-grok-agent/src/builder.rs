@@ -800,6 +800,33 @@ impl AgentBuilder {
                     Some(build_task_description(&subagents, &self.task_model_slugs));
             }
         }
+        // Workflows are a production Atlas capability. UltraCode is a
+        // session mode that changes when the model should choose them, not a
+        // process-level switch that makes the control surface disappear.
+        if !task_stripped && self.prompt_audience == crate::prompt::context::PromptAudience::Primary
+        {
+            let workflow: xai_grok_tools::registry::types::ToolConfig =
+                (&xai_grok_tools::implementations::grok_build::WorkflowTool).into();
+            if !tool_config.tools.iter().any(|tool| tool.id == workflow.id) {
+                tool_config.tools.push(workflow);
+            }
+            for tool in [
+                xai_grok_tools::registry::types::ToolConfig::from(
+                    &xai_grok_tools::implementations::grok_build::WorkflowPreviewTool,
+                ),
+                xai_grok_tools::registry::types::ToolConfig::from(
+                    &xai_grok_tools::implementations::grok_build::WorkflowActionTool,
+                ),
+            ] {
+                if !tool_config
+                    .tools
+                    .iter()
+                    .any(|existing| existing.id == tool.id)
+                {
+                    tool_config.tools.push(tool);
+                }
+            }
+        }
         if task_stripped {
             use xai_grok_tools::types::tool::ToolNamespace;
             let has_satisfier = |ns: ToolNamespace, id: &str, needs_bg: bool| {
@@ -877,7 +904,15 @@ impl AgentBuilder {
                 .tools
                 .iter()
                 .any(|t| AGENT_TASK_CLASSIFIER_RE.is_match(t));
-            let task_deps = ["task", "get_task_output", "kill_task", "wait_tasks"];
+            let task_deps = [
+                "task",
+                "workflow",
+                "workflow_preview",
+                "workflow_action",
+                "get_task_output",
+                "kill_task",
+                "wait_tasks",
+            ];
             let registered_tool_ids = tool_bridge_builder.known_tool_ids();
             let present_kinds: std::collections::HashSet<ToolKind> =
                 tool_config.tools.iter().filter_map(|tc| tc.kind).collect();
@@ -992,7 +1027,15 @@ impl AgentBuilder {
             }
         }
         if definition.allowed_subagent_types.as_deref() == Some(&[]) {
-            let task_deps = ["task", "get_task_output", "kill_task", "wait_tasks"];
+            let task_deps = [
+                "task",
+                "workflow",
+                "workflow_preview",
+                "workflow_action",
+                "get_task_output",
+                "kill_task",
+                "wait_tasks",
+            ];
             tool_config
                 .tools
                 .retain(|tc| !task_deps.contains(&short_tool_name(&tc.id)));

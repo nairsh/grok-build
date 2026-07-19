@@ -265,6 +265,12 @@ impl From<&xai_grok_tools::types::ToolInput> for AccessKind {
             ToolInput::Write(w) => AccessKind::Edit(w.file_path.clone()),
             ToolInput::Bash(bash) => AccessKind::Bash(bash.command.to_string()),
             ToolInput::Monitor(m) => AccessKind::Bash(m.command.clone()),
+            // A workflow executes model-authored orchestration and launches
+            // autonomous workers. Treat it as executable work so it follows
+            // the normal approval path instead of the safe-read fast path.
+            ToolInput::Workflow(_) => {
+                AccessKind::Bash("read-only multi-agent workflow".to_string())
+            }
             ToolInput::MCPTool(mcp) => AccessKind::MCPTool {
                 name: mcp.tool_name.to_string(),
                 input: mcp.tool_input.clone(),
@@ -621,6 +627,32 @@ mod tests {
             "Write should produce AccessKind::Edit with the file path, got {access:?}"
         );
     }
+
+    #[test]
+    fn workflow_maps_to_executable_access_not_safe_read() {
+        use xai_grok_tools::implementations::grok_build::workflow::WorkflowInput;
+        use xai_grok_tools::types::ToolInput;
+
+        let input = ToolInput::Workflow(WorkflowInput {
+            script: "export const meta = {}; return null;".into(),
+            saved_workflow: None,
+            args: serde_json::json!({}),
+            resume_from_run_id: None,
+            max_concurrency: None,
+            timeout_seconds: None,
+            max_agents: None,
+            max_tokens: None,
+            retention_days: None,
+            run_in_background: false,
+            approval_hash: None,
+        });
+        let access = AccessKind::from(&input);
+        assert!(
+            matches!(access, AccessKind::Bash(ref command) if command.contains("workflow")),
+            "Workflow must use the executable approval path, got {access:?}"
+        );
+    }
+
     #[test]
     fn client_type_deserializes_grok_shell_as_generic() {
         assert_eq!(

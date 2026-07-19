@@ -33,6 +33,12 @@ pub struct SubagentRequest {
     /// Subagent ID (UUID v7). Same as `TaskToolInput.task_id`; becomes the child session ID.
     pub id: String,
     pub prompt: String,
+    /// Optional JSON Schema for the child agent's final response.
+    ///
+    /// Ordinary `task` calls leave this unset. Workflow workers use it to
+    /// receive a schema-validated value through the existing session prompt
+    /// path instead of parsing best-effort JSON from prose.
+    pub json_schema: Option<serde_json::Value>,
     pub description: String,
     pub subagent_type: String,
     pub parent_session_id: String,
@@ -63,6 +69,15 @@ pub struct SubagentRequest {
     /// Harness-only: seed child with normalized parent conversation, then append
     /// `prompt`. Not on TaskToolInput. Successful `resume_from` takes precedence.
     pub fork_context: bool,
+    /// Harness-only: force an unshadowable, fail-closed read-only worker.
+    ///
+    /// Dynamic workflows set this so project agents, MCPs, hooks, skills,
+    /// memory, and optional session tools cannot widen the child's capabilities.
+    /// Ordinary Task calls must leave it false.
+    pub strict_read_only: bool,
+    /// Harness-only: force a fail-closed workflow writer in an isolated
+    /// worktree with only repository-scoped file tools.
+    pub strict_workflow_write: bool,
     /// Oneshot channel for the coordinator to send back the result.
     #[educe(Debug(ignore))]
     pub result_tx: oneshot::Sender<SubagentResult>,

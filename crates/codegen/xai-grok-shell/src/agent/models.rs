@@ -222,7 +222,7 @@ impl ModelsManager {
     ) -> Result<Self, String> {
         let has_session = auth_manager.current_or_expired().is_some();
         let is_session_auth = auth_manager
-            .current_or_expired()
+            .current_wire_valid()
             .is_some_and(|a| a.is_session_auth());
         let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints, has_session);
         let prefetched_models = prefetched_models.or_else(|| {
@@ -365,7 +365,7 @@ impl ModelsManager {
     fn is_session_auth(&self) -> bool {
         self.inner
             .auth_manager
-            .current_or_expired()
+            .current_wire_valid()
             .is_some_and(|a| a.is_session_auth())
     }
 
@@ -1692,6 +1692,13 @@ pub(crate) fn resolve_default_model(
     );
 
     let first_or_fallback = || -> (String, ModelEntry) {
+        if !is_session_auth
+            && let Some((key, model)) = visible
+                .iter()
+                .find(|(_, model)| model.has_own_credentials())
+        {
+            return (key.clone(), model.clone());
+        }
         if let Some((key, first)) = visible.first() {
             return (key.clone(), first.clone());
         }
@@ -3322,6 +3329,33 @@ mod tests {
             key == "oauth-only" || key == "public-model",
             "OAuth user should be able to use either model as default"
         );
+    }
+
+    #[test]
+    fn default_model_prefers_a_model_with_credentials_without_session_auth() {
+        let cfg = config::Config::default();
+        let mut catalog = IndexMap::new();
+        catalog.insert(
+            "bundled-model".to_owned(),
+            ModelEntry {
+                info: config::ModelInfo::fallback("bundled-model"),
+                api_key: None,
+                env_key: None,
+                api_base_url: None,
+            },
+        );
+        catalog.insert(
+            "connected-model".to_owned(),
+            ModelEntry {
+                info: config::ModelInfo::fallback("connected-model"),
+                api_key: Some("saved-credential".to_owned()),
+                env_key: None,
+                api_base_url: None,
+            },
+        );
+
+        let (key, _, _) = resolve_default_model(&cfg, &catalog, false);
+        assert_eq!(key, "connected-model");
     }
 
     #[test]

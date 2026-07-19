@@ -585,6 +585,7 @@ impl AgentView {
                     self.handle_modal_key(key)
                 }
                 Event::Mouse(mouse) => self.handle_modal_mouse(mouse),
+                Event::Paste(text) => self.handle_modal_paste(text),
                 _ => InputOutcome::Changed,
             };
         }

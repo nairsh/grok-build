@@ -1925,6 +1925,7 @@ fn switch_model_holds_prompt_until_complete() {
         Action::SwitchModel {
             model_id: model_id.clone(),
             effort: None,
+            service_tier_change: None,
         },
         &mut app,
     );
@@ -1942,6 +1943,7 @@ fn switch_model_holds_prompt_until_complete() {
             agent_id: id,
             model_id,
             effort: None,
+            service_tier_change: None,
             result: Ok(()),
             prev_model_id: None,
         }),

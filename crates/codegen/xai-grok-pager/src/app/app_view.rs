@@ -732,6 +732,9 @@ pub struct AppView {
     /// leaves the alternate screen, disables raw mode, spawns the editor,
     /// waits for it to exit, then restores the TUI.
     pub pending_editor_path: Option<std::path::PathBuf>,
+    /// Provider id to configure in the tty-taking `atlas login` child. An empty
+    /// string opens the child picker. Consumed by the event loop.
+    pub pending_provider_login: Option<String>,
     /// After `$EDITOR` exits, refresh the agents modal tab list if still open.
     pub pending_agents_modal_refresh: Option<crate::views::agents_modal::AgentsTab>,
     /// Path to open in `$PAGER` (default `less`) after the current event cycle.
@@ -1213,6 +1216,7 @@ impl AppView {
             welcome_tip_typing_dismissed: false,
             pending_effects: Vec::new(),
             pending_editor_path: None,
+            pending_provider_login: None,
             pending_agents_modal_refresh: None,
             pending_pager_path: None,
             pending_pager_ansi: false,
@@ -2075,6 +2079,15 @@ impl AppView {
             );
             if !stale_idle_arm_while_busy && !pending.expired() && pending.shortcut.matches(key) {
                 let action = self.pending_action.take().unwrap().action;
+                // A confirmed double-Esc bypasses AgentView's normal key
+                // routing, so record its source here before dispatching the
+                // shared cancellation action.
+                if matches!(action, Action::CancelTurn)
+                    && let ActiveView::Agent(id) = self.active_view
+                    && let Some(agent) = self.agents.get_mut(&id)
+                {
+                    agent.cancel_trigger_hint = Some(crate::app::actions::CancelTrigger::Esc);
+                }
                 return InputOutcome::Action(action);
             }
             self.pending_action = None;
@@ -3821,6 +3834,13 @@ impl AppView {
                                 bold: false,
                             });
                         }
+                        if self.models.is_fast() {
+                            flags_vec.push(crate::views::prompt_widget::PromptFlag {
+                                text: "fast",
+                                color: Some(ratatui::style::Color::Yellow),
+                                bold: false,
+                            });
+                        }
                         if !self.welcome_prompt.text().is_empty() {
                             self.welcome_tip_typing_dismissed = true;
                         }
@@ -5206,6 +5226,7 @@ pub(crate) mod tests {
             screen_mode: ScreenMode::Inline,
             pending_effects: Vec::new(),
             pending_editor_path: None,
+            pending_provider_login: None,
             pending_agents_modal_refresh: None,
             pending_pager_path: None,
             pending_pager_ansi: false,
@@ -7368,7 +7389,7 @@ pub(crate) mod tests {
         );
     }
     #[test]
-    fn esc_from_prompt_pane_running_turn_is_swallowed() {
+    fn double_esc_from_prompt_pane_running_turn_cancels() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         let agent = app.agents.get_mut(&id).unwrap();
@@ -7377,14 +7398,50 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "1× Esc while running must swallow (not cancel), got {outcome:?}"
+            "first Esc while running must arm stop, got {outcome:?}"
         );
-        assert!(app.pending_action.is_none());
+        let pending = app.pending_action.as_ref().expect("arm stop");
+        assert!(matches!(pending.action, Action::CancelTurn));
+        assert_eq!(pending.label, Some("stop"));
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
         assert!(app.agents[&id].session.state.is_turn_running());
+
+        let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
+            "second Esc while running must cancel, got {outcome:?}"
+        );
+        assert!(app.pending_action.is_none());
+        assert_eq!(
+            app.agents[&id].cancel_trigger_hint,
+            Some(crate::app::actions::CancelTrigger::Esc)
+        );
     }
     #[test]
-    fn esc_from_prompt_pane_running_turn_with_draft_is_swallowed_not_clear() {
+    fn expired_running_turn_esc_stop_arm_requires_two_fresh_presses() {
+        let mut app = test_app_with_agent();
+        let id = super::super::agent::AgentId(0);
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.session.state = AgentState::TurnRunning;
+        agent.active_pane = crate::views::agent::ActivePane::Prompt;
+
+        let _ = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+        app.pending_action.as_mut().expect("arm stop").expires_at =
+            std::time::Instant::now() - std::time::Duration::from_millis(1);
+
+        let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            matches!(outcome, InputOutcome::Changed),
+            "an expired first Esc must not cancel, got {outcome:?}"
+        );
+        assert!(matches!(
+            app.pending_action.as_ref().expect("re-arm stop").action,
+            Action::CancelTurn
+        ));
+        assert!(app.agents[&id].cancel_trigger_hint.is_none());
+    }
+    #[test]
+    fn esc_from_prompt_pane_running_turn_with_draft_arms_stop_without_clearing() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         let agent = app.agents.get_mut(&id).unwrap();
@@ -7394,12 +7451,15 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "mid-turn Esc with draft must swallow, got {outcome:?}"
+            "first mid-turn Esc with draft must arm stop, got {outcome:?}"
         );
-        assert!(app.pending_action.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn"
+            "the first Esc must not cancel mid-turn"
         );
         assert_eq!(
             app.agents[&id].prompt.textarea.text(),
@@ -7409,7 +7469,7 @@ pub(crate) mod tests {
         assert!(app.agents[&id].session.state.is_turn_running());
     }
     #[test]
-    fn esc_from_scrollback_pane_running_turn_is_swallowed() {
+    fn esc_from_scrollback_pane_running_turn_arms_stop() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         let agent = app.agents.get_mut(&id).unwrap();
@@ -7418,9 +7478,12 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "1× Esc from scrollback while running must swallow, got {outcome:?}"
+            "first Esc from scrollback while running must arm stop, got {outcome:?}"
         );
-        assert!(app.pending_action.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
         assert!(app.agents[&id].session.state.is_turn_running());
     }
@@ -7515,7 +7578,7 @@ pub(crate) mod tests {
         );
     }
     #[test]
-    fn mouse_send_retires_armed_clear_so_next_esc_swallows() {
+    fn mouse_send_retires_armed_clear_so_next_esc_arms_stop() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         {
@@ -7537,7 +7600,7 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "Esc after a mouse-send must swallow mid-turn, got {outcome:?}",
+            "Esc after a mouse-send must arm stop mid-turn, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::ClearPrompt)),
@@ -7545,14 +7608,17 @@ pub(crate) mod tests {
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
-        assert!(app.pending_action.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
     }
     /// Arm an idle-Esc `ClearPrompt`, submit via `text`-carrying `action` (a
     /// turn-start path with no intervening key), assert the arm was retired, then
-    /// with the turn running assert the next Esc swallows (never the stale clear).
+    /// with the turn running assert the next Esc arms stop (never the stale clear).
     fn assert_submit_path_retires_clear_arm(action: Action) {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
@@ -7576,21 +7642,24 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "Esc after a non-keyed submit must swallow mid-turn, got {outcome:?}",
+            "Esc after a non-keyed submit must arm stop mid-turn, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
-        assert!(app.pending_action.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
     }
     #[test]
-    fn submit_follow_up_retires_armed_clear_so_next_esc_swallows() {
+    fn submit_follow_up_retires_armed_clear_so_next_esc_arms_stop() {
         assert_submit_path_retires_clear_arm(Action::SubmitFollowUp("follow up".into()));
     }
     #[test]
-    fn slash_preserving_send_retires_armed_clear_so_next_esc_swallows() {
+    fn slash_preserving_send_retires_armed_clear_so_next_esc_arms_stop() {
         assert_submit_path_retires_clear_arm(Action::SendSlashCommandPreservingDraft(
             "/compact".into(),
         ));
@@ -7614,7 +7683,7 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "Esc on a busy agent must swallow, not fire the stale clear arm, got {outcome:?}",
+            "Esc on a busy agent must arm stop, not fire the stale clear arm, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::ClearPrompt)),
@@ -7622,13 +7691,16 @@ pub(crate) mod tests {
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
-        assert!(
-            app.pending_action.is_none(),
-            "the stale arm must be dropped"
-        );
+        assert!(matches!(
+            app.pending_action
+                .as_ref()
+                .expect("replace stale arm with stop")
+                .action,
+            Action::CancelTurn
+        ));
     }
     #[test]
     fn stale_idle_rewind_arm_never_fires_on_busy_agent() {
@@ -7653,16 +7725,19 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "Esc on a busy agent must swallow, not fire the stale rewind arm, got {outcome:?}",
+            "Esc on a busy agent must arm stop, not fire the stale rewind arm, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
-        assert!(
-            app.pending_action.is_none(),
-            "the stale arm must be dropped"
-        );
+        assert!(matches!(
+            app.pending_action
+                .as_ref()
+                .expect("replace stale arm with stop")
+                .action,
+            Action::CancelTurn
+        ));
     }
     #[test]
     fn esc_consumed_by_policy_disarms_esc_d_combo() {
@@ -7690,7 +7765,7 @@ pub(crate) mod tests {
         assert!(matches!(outcome, InputOutcome::Changed));
         assert!(
             app.agents[&id].esc_pressed_at.is_none(),
-            "mid-turn swallow Esc must disarm the Esc→d combo",
+            "mid-turn Esc stop arm must disarm the Esc→d combo",
         );
     }
     #[test]
@@ -9127,11 +9202,11 @@ pub(crate) mod tests {
         );
     }
     /// Regression: in an overlay, a bare Esc while a turn is
-    /// RUNNING must swallow (matching full-screen), NOT detach to the dashboard
-    /// and NOT cancel. The empty-prompt back-out is idle-gated, so Esc falls
-    /// through to `try_handle_esc_policy` → mid-turn swallow.
+    /// RUNNING must arm a stop (matching full-screen), NOT detach to the
+    /// dashboard. The empty-prompt back-out is idle-gated, so Esc falls through
+    /// to `try_handle_esc_policy`.
     #[test]
-    fn overlay_esc_running_turn_empty_prompt_swallows_not_backout() {
+    fn overlay_esc_running_turn_empty_prompt_arms_stop_not_backout() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         app.active_view = ActiveView::Agent(id);
@@ -9146,25 +9221,28 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "running-turn overlay Esc (empty prompt) must swallow, not detach/cancel, got {outcome:?}",
+            "running-turn overlay Esc must arm stop, not detach/cancel, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::DashboardOverlayExit)),
             "Esc must not detach mid-turn",
         );
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
-        assert!(app.pending_action.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
     }
     /// Regression: in an overlay, a bare Esc from the
-    /// (neutral) bare-scrollback pane while a turn is RUNNING must swallow, NOT
+    /// (neutral) bare-scrollback pane while a turn is RUNNING must arm stop, NOT
     /// detach — the neutral back-out is idle-gated. The fixture is otherwise
     /// neutral (so the gate, not a missing-neutral, is what suppresses detach).
     #[test]
-    fn overlay_esc_running_turn_scrollback_swallows_not_backout() {
+    fn overlay_esc_running_turn_scrollback_arms_stop_not_backout() {
         let mut app = test_app_with_agent();
         let id = super::super::agent::AgentId(0);
         app.active_view = ActiveView::Agent(id);
@@ -9180,17 +9258,21 @@ pub(crate) mod tests {
         let outcome = app.handle_input(&key_event(KeyCode::Esc, KeyModifiers::NONE));
         assert!(
             matches!(outcome, InputOutcome::Changed),
-            "running-turn overlay Esc (scrollback) must swallow, not detach/cancel, got {outcome:?}",
+            "running-turn overlay Esc must arm stop, not detach/cancel, got {outcome:?}",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::CancelTurn)),
-            "Esc must not cancel mid-turn",
+            "the first Esc must not cancel mid-turn",
         );
         assert!(
             !matches!(outcome, InputOutcome::Action(Action::DashboardOverlayExit)),
             "Esc must not detach mid-turn",
         );
         assert!(app.agents[&id].cancel_trigger_hint.is_none());
+        assert!(matches!(
+            app.pending_action.as_ref().expect("arm stop").action,
+            Action::CancelTurn
+        ));
     }
     /// Overlay + TurnCancelling: Esc retries cancel (does not detach).
     #[test]

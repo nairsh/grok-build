@@ -22,6 +22,15 @@ pub(crate) async fn apply(
     );
     tracing::debug!("session_session_model::mvp_agent: {:?}", &args);
     let effort_override = parse_reasoning_effort_meta(args.meta.as_ref());
+    // `None` means this is an ordinary model switch and the session's tier is
+    // retained. A present JSON null explicitly returns to Standard mode.
+    let service_tier_override = args.meta.as_ref().and_then(|meta| {
+        meta.contains_key("serviceTier").then(|| {
+            meta.get("serviceTier")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+    });
     let acp::SetSessionModelRequest {
         session_id,
         model_id,
@@ -192,6 +201,7 @@ pub(crate) async fn apply(
     let (tx, rx) = oneshot::channel();
     let _ = handle.cmd_tx.send(SessionCommand::SetSessionModel {
         sampling_config: model_sampling,
+        service_tier_override,
         use_concise,
         apply_prompt_override,
         skip_prompt_rewrite: did_rebuild || model_unchanged,

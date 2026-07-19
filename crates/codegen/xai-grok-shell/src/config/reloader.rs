@@ -387,7 +387,15 @@ impl ConfigReloader {
         let new_model_table = new_global.get("model");
         let old_models_table = self.last_global_config.get("models");
         let new_models_table = new_global.get("models");
-        if old_model_table != new_model_table || old_models_table != new_models_table {
+        let old_task_model = self
+            .last_global_config
+            .get("ui")
+            .and_then(|ui| ui.get("task_model"));
+        let new_task_model = new_global.get("ui").and_then(|ui| ui.get("task_model"));
+        if old_model_table != new_model_table
+            || old_models_table != new_models_table
+            || old_task_model != new_task_model
+        {
             info!("model config change detected");
             let _ = self.config_update_tx.send(ConfigUpdate::ModelsChanged);
         }

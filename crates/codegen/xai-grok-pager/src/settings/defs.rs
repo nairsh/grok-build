@@ -1501,5 +1501,22 @@ pub fn default_settings() -> Vec<SettingMeta> {
             restart_required: false,
             hidden_in_minimal: false,
         },
+        SettingMeta {
+            key: "task_model",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "Task model",
+            description: "Model used to name a session from its first prompt and generate session recaps. Pick `(no override)` to clear.",
+            keywords: &[
+                "task", "session", "name", "title", "recap", "summary", "model",
+            ],
+            kind: SettingKind::DynamicEnum {
+                default: "",
+                source: DynamicEnumSource::ActiveModelCatalog,
+                supports_preview: false,
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
     ]
 }

@@ -218,8 +218,17 @@ impl SessionActor {
         let strip_reasoning =
             sampling_client.api_backend() == crate::sampling::ApiBackend::Messages;
 
-        // Budget off the recap model's context window (today the session model).
-        // One read serves both the window and the model.
+        // The task model also powers the initial session name. Resolve it here
+        // so a Settings change applies to the next recap without changing the
+        // active conversation model.
+        let task_model = crate::config::load_effective_config()
+            .ok()
+            .and_then(|raw| crate::agent::config::Config::new_from_toml_cfg(&raw).ok())
+            .and_then(|cfg| cfg.session_summary_model)
+            .unwrap_or_else(|| crate::models::default_session_summary_model().to_owned());
+
+        // Budget off the active model's known context window. The task-model
+        // request is still capped by the same conservative trimming path.
         let sampling_config = self.chat_state_handle.get_sampling_config().await;
         let context_window = sampling_config
             .as_ref()
@@ -228,7 +237,7 @@ impl SessionActor {
         let items =
             session_recap::budget_recap_items(conversation, tag, strip_reasoning, context_window);
 
-        let model = sampling_config.map(|c| c.model).unwrap_or_default();
+        let model = task_model;
 
         // Leave BOTH temperature and max_output_tokens unset: the cli-chat-proxy
         // layer may inject a `thinking` budget for thinking-enabled models

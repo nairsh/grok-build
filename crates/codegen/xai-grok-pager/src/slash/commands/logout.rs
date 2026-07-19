@@ -1,4 +1,4 @@
-//! `/logout` -- remove auth credentials and return to the login screen.
+//! `/logout` -- manage and remove saved provider credentials.
 
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
@@ -11,7 +11,7 @@ impl SlashCommand for LogoutCommand {
     }
 
     fn description(&self) -> &str {
-        "Log out and return to the login screen"
+        "Manage and remove saved provider credentials"
     }
 
     fn usage(&self) -> &str {
@@ -19,6 +19,6 @@ impl SlashCommand for LogoutCommand {
     }
 
     fn run(&self, _ctx: &mut CommandExecCtx, _args: &str) -> CommandResult {
-        CommandResult::Action(Action::Logout)
+        CommandResult::Action(Action::OpenProviderLogout)
     }
 }

@@ -15,6 +15,10 @@ use xai_grok_sampling_types::{
 use crate::attribution::SharedAttributionCallback;
 use crate::retry::{DEFAULT_MAX_RETRIES, RATE_LIMIT_RETRY_THRESHOLD};
 
+/// Internal marker carried in generic session config. It is removed before
+/// HTTP headers are sent and emitted as the Responses API `service_tier` field.
+pub const SERVICE_TIER_MARKER_HEADER: &str = "x-grok-service-tier";
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthScheme {
@@ -56,9 +60,10 @@ pub struct SamplerConfig {
     pub api_backend: ApiBackend,
     #[serde(default)]
     pub auth_scheme: AuthScheme,
-    /// Extra request headers applied verbatim. The sampler never inspects
-    /// the URL to derive headers; callers (the session) inject proxy auth
-    /// and other access headers here before constructing the config.
+    /// Extra request headers applied verbatim, except the internal
+    /// [`SERVICE_TIER_MARKER_HEADER`] which is emitted as a Responses API
+    /// request field. Callers (the session) inject proxy auth and other access
+    /// headers here before constructing the config.
     pub extra_headers: IndexMap<String, String>,
     /// Total context window size in tokens. The sampler does not enforce
     /// it; it is informational metadata used by the session for compaction

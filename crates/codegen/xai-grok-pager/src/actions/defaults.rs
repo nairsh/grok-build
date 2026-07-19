@@ -467,7 +467,7 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             hint_key_display: None,
             requires_confirmation: false,
             long_help: Some(
-                "Interrupts the agent's current turn and stops generation, keeping the session open.\nCtrl+C cancels when the prompt is empty; with a non-empty draft it clears the prompt first and leaves the turn running.\nIt stops the turn, not the app; use the quit shortcut to exit.",
+                "Interrupts the agent's current turn and stops generation, keeping the session open.\nPress Esc twice quickly to stop a running turn; Ctrl+C cancels when the prompt is empty, while a non-empty draft is cleared first and leaves the turn running.\nIt stops the turn, not the app; use the quit shortcut to exit.",
             ),
         },
         ActionDef {

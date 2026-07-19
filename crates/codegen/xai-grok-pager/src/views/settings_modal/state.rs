@@ -797,6 +797,15 @@ pub(super) fn action_for_string(
                     .map(Action::SetForkSecondaryModel)
             }
         }
+        "task_model" => {
+            if value.is_empty() {
+                Some(Action::ClearTaskModel)
+            } else {
+                snapshot
+                    .resolve_model_name(&value)
+                    .map(Action::SetTaskModel)
+            }
+        }
 
         _ => {
             let _ = value;

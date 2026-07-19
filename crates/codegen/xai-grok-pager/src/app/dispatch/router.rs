@@ -73,7 +73,7 @@ use super::session::load::{
 };
 use super::session::modal::dispatch_rename_session;
 use super::settings::setters::{
-    clear_default_model, clear_fork_secondary_model, preview_auto_dark_theme,
+    clear_default_model, clear_fork_secondary_model, clear_task_model, preview_auto_dark_theme,
     preview_auto_light_theme, preview_theme, set_ask_user_question_timeout_enabled,
     set_auto_dark_theme, set_auto_light_theme, set_auto_update, set_collapsed_edit_blocks,
     set_compact_mode, set_contextual_hint_image_input, set_contextual_hint_plan_mode,
@@ -83,8 +83,8 @@ use super::settings::setters::{
     set_hunk_tracker_mode, set_invert_scroll, set_keep_text_selection, set_max_thoughts_width,
     set_multiline_mode, set_prompt_suggestions, set_remember_tool_approvals, set_render_mermaid,
     set_respect_manual_folds, set_screen_mode, set_scroll_lines, set_scroll_mode, set_scroll_speed,
-    set_show_thinking_blocks, set_show_tips, set_simple_mode, set_theme, set_timeline,
-    set_timestamps, set_vim_mode, set_voice_capture_mode, set_voice_stt_language,
+    set_show_thinking_blocks, set_show_tips, set_simple_mode, set_task_model, set_theme,
+    set_timeline, set_timestamps, set_vim_mode, set_voice_capture_mode, set_voice_stt_language,
 };
 use super::settings::ui::{
     dispatch_confirm_reset_setting, dispatch_open_command_palette, dispatch_open_howto_guides,
@@ -793,7 +793,11 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             }]
         }
         Action::NextModel => vec![],
-        Action::SwitchModel { model_id, effort } => {
+        Action::SwitchModel {
+            model_id,
+            effort,
+            service_tier_change,
+        } => {
             let ActiveView::Agent(id) = app.active_view else {
                 return vec![];
             };
@@ -810,6 +814,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 session_id,
                 model_id,
                 effort,
+                service_tier_change,
                 prev_model_id: None,
             }]
         }
@@ -881,6 +886,142 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::ShowUsage => dispatch_show_usage(app),
         Action::ShowQueue => dispatch_show_queue(app),
         Action::ShowTasks => dispatch_show_tasks(app),
+        Action::OpenWorkflows => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::Workflows {
+                state: crate::views::workflows_modal::WorkflowsModalState::new(
+                    &agent.workflows,
+                    &agent.session.cwd,
+                ),
+            });
+            vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id,
+                request: crate::views::workflows_modal::WorkflowUiRequest {
+                    action: crate::views::workflows_modal::WorkflowUiAction::List,
+                    run_id: None,
+                    worker_id: None,
+                    enabled: None,
+                },
+            }]
+        }
+        Action::WorkflowRequest(request) => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id,
+                request,
+            }]
+        }
+        Action::RunSavedWorkflow(name) => dispatch_send_prompt(
+            app,
+            format!(
+                "Run the saved Dynamic Workflow `{name}`. Call workflow_preview first, show me its validated plan and limits through the approval UI, then execute it with the exact approval hash."
+            ),
+        ),
+        Action::ApplyWorkflowWorktree { worktree_path } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::ApplyWorkflowWorktree {
+                agent_id: id,
+                session_id,
+                worktree_path,
+            }]
+        }
+        Action::ReviewWorkflowWorktree {
+            run_id: _,
+            worker_id: _,
+            worktree_path,
+        } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            vec![Effect::ReviewWorkflowWorktree {
+                agent_id: id,
+                session_id,
+                worktree_path,
+            }]
+        }
+        Action::SetUltracode(requested) => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            let Some(session_id) = agent.session.session_id.clone() else {
+                return vec![];
+            };
+            let enabled = requested.unwrap_or(!agent.workflows.ultracode_enabled);
+            agent.workflows.ultracode_enabled = enabled;
+            if let Some(crate::views::modal::ActiveModal::Workflows { state }) =
+                agent.active_modal.as_mut()
+            {
+                state.ultracode_enabled = enabled;
+                state.pending_action = Some("set_ultracode".into());
+                state.message = None;
+            }
+            agent.show_toast(if enabled {
+                "UltraCode enabled · xhigh reasoning"
+            } else {
+                "UltraCode disabled"
+            });
+            let mut effects = vec![Effect::WorkflowRequest {
+                agent_id: id,
+                session_id: session_id.clone(),
+                request: crate::views::workflows_modal::WorkflowUiRequest {
+                    action: crate::views::workflows_modal::WorkflowUiAction::SetUltracode,
+                    run_id: None,
+                    worker_id: None,
+                    enabled: Some(enabled),
+                },
+            }];
+            if enabled
+                && let Some(model_id) = agent.session.models.current.clone()
+                && agent.session.models.reasoning_effort
+                    != Some(xai_grok_shell::sampling::types::ReasoningEffort::Xhigh)
+            {
+                agent.session.model_switch_pending = true;
+                effects.push(Effect::SwitchModel {
+                    agent_id: id,
+                    session_id,
+                    model_id,
+                    effort: Some(xai_grok_shell::sampling::types::ReasoningEffort::Xhigh),
+                    service_tier_change: None,
+                    prev_model_id: None,
+                });
+            }
+            effects
+        }
         Action::ShowPlan => dispatch_show_plan(app),
         Action::EnterPlanMode { description } => dispatch_enter_plan_mode(app, description),
         Action::SetPlanMode(kind) => set_plan_mode(app, kind),
@@ -939,6 +1080,8 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::ClearDefaultModel => clear_default_model(app),
         Action::SetForkSecondaryModel(v) => set_fork_secondary_model(app, v),
         Action::ClearForkSecondaryModel => clear_fork_secondary_model(app),
+        Action::SetTaskModel(v) => set_task_model(app, v),
+        Action::ClearTaskModel => clear_task_model(app),
         Action::SetMaxThoughtsWidth(v) => set_max_thoughts_width(app, v),
         Action::SetShowTips(v) => set_show_tips(app, v),
         Action::SetAutoUpdate(v) => set_auto_update(app, v),
@@ -1141,6 +1284,82 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             app.pending_editor_path = Some(path);
             app.pending_agents_modal_refresh = refresh_agents_modal;
             vec![]
+        }
+        Action::OpenProviderLogin { provider } => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::ProviderLogin {
+                state: Box::new(
+                    crate::views::provider_login_modal::ProviderLoginModalState::new(provider),
+                ),
+            });
+            vec![]
+        }
+        Action::OpenProviderLogout => {
+            let ActiveView::Agent(id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get_mut(&id) else {
+                return vec![];
+            };
+            agent.active_modal = Some(crate::views::modal::ActiveModal::ProviderLogin {
+                state: Box::new(
+                    crate::views::provider_login_modal::ProviderLoginModalState::new_logout(),
+                ),
+            });
+            vec![]
+        }
+        Action::RunProviderLogin { provider } => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            match provider.as_str() {
+                "anthropic-subscription" | "openai-codex" => {
+                    vec![Effect::ProviderOauthLogin { agent_id, provider }]
+                }
+                "xai" => {
+                    // xAI uses the app's existing interactive auth view. It
+                    // remains in this process rather than launching a child.
+                    dispatch_login(app)
+                }
+                "github-copilot" => {
+                    app.show_toast("GitHub Copilot device-code login is not available yet.");
+                    vec![]
+                }
+                _ => vec![],
+            }
+        }
+        Action::LogoutXaiFromProviderModal => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            vec![Effect::ProviderXaiLogout { agent_id }]
+        }
+        Action::DiscoverProviderModels => {
+            let ActiveView::Agent(agent_id) = app.active_view else {
+                return vec![];
+            };
+            let Some(agent) = app.agents.get(&agent_id) else {
+                return vec![];
+            };
+            let Some(crate::views::modal::ActiveModal::ProviderLogin { state }) =
+                agent.active_modal.as_ref()
+            else {
+                return vec![];
+            };
+            let Some((request_id, base_url, api_key)) = state.model_discovery_credentials() else {
+                return vec![];
+            };
+            vec![Effect::ProviderModelDiscovery {
+                agent_id,
+                request_id,
+                base_url,
+                api_key,
+            }]
         }
         Action::OpenDashboard => dispatch_open_dashboard(app),
         Action::ExitDashboard => dispatch_exit_dashboard(app),

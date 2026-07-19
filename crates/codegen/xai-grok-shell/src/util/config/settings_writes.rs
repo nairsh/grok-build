@@ -125,6 +125,18 @@ pub async fn set_fork_secondary_model(value: String) -> Result<()> {
     .await
 }
 
+/// Persist the optional task model used for session names and recaps.
+pub async fn set_task_model(value: String) -> Result<()> {
+    if value.len() > MAX_DEFAULT_MODEL_LEN {
+        anyhow::bail!(
+            "task_model name too long ({} > {} bytes)",
+            value.len(),
+            MAX_DEFAULT_MODEL_LEN
+        );
+    }
+    update_config(|cfg| cfg.ui.task_model = (!value.is_empty()).then_some(value)).await
+}
+
 /// Bounds for [`set_max_thoughts_width`]. Mirrored from the pager's
 /// registry consts; a CI test pins the agreement.
 const MAX_THOUGHTS_WIDTH_SHELL_MIN: i64 = 40;

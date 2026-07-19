@@ -74,13 +74,18 @@ Requirements:
 
 ```sh
 cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
+cargo build -p xai-grok-pager-bin --release  # release binary: target/release/atlas
 cargo check -p xai-grok-pager-bin            # fast validation
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
-[authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
+The binary artifact is named `atlas` (this fork renames it from `xai-grok-pager`/
+`grok` so it doesn't collide with an upstream `grok` install). Sign in with
+`atlas login`, which opens an interactive menu to choose a subscription (xAI,
+Claude Pro/Max, ChatGPT Codex) or one of 26 API-key providers. Use
+`atlas login <provider>` to jump directly to one, or `/login` from the running
+TUI — see the
+[providers & connections guide](crates/codegen/xai-grok-pager/docs/user-guide/25-providers-and-connections.md)
+and the [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
 
 ## Documentation
 

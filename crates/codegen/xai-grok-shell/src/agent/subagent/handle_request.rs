@@ -62,36 +62,87 @@ pub(crate) async fn handle_subagent_request(
     coordinator: &std::cell::RefCell<SubagentCoordinator>,
     gateway: &GatewaySender,
 ) {
+    // Quiet harness-internal work has no other consumer. Its spawn request can
+    // be queued immediately before the owning workflow is cancelled; in that
+    // case the result receiver is already gone and starting the child would
+    // create an orphan. There is no await between this check and
+    // `insert_pending`, so a cancellation that arrives later can find the
+    // registered child.
+    if should_skip_abandoned_internal_spawn(&request) {
+        tracing::debug!(
+            subagent_id = %request.id,
+            "skipping abandoned internal subagent before spawn",
+        );
+        return;
+    }
     let start = std::time::Instant::now();
     let mut parent_wait_guard = (!request.run_in_background)
         .then(|| crate::tools::tool_context::BlockingWaitGuard::enter(
             ctx.parent_blocking_wait_depth.clone(),
         ));
-    let Some(mut definition) = resolve_agent_definition(&request.subagent_type, &ctx)
-    else {
-        let msg = format!("Unknown subagent type: {}", request.subagent_type);
-        send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+    let strict_read_only = request.strict_read_only;
+    let strict_workflow_write = request.strict_workflow_write;
+    if strict_read_only && strict_workflow_write {
+        let msg = "workflow worker cannot be both strict read-only and strict write";
+        send_pre_spawn_failure(request, msg, coordinator, &ctx, gateway);
         return;
-    };
-    match gate_subagent_type(&request.subagent_type, &ctx) {
-        SubagentValidateTypeOutcome::Disabled => {
-            let msg = format!(
-                "Subagent '{}' is disabled via [subagents.toggle] in config.toml",
-                request.subagent_type
-            );
-            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
-            return;
-        }
-        SubagentValidateTypeOutcome::NotAllowed { allowed } => {
-            let msg = format!(
-                "agent can only spawn: {}; '{}' not allowed", allowed.join(", "), request
-                .subagent_type
-            );
-            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
-            return;
-        }
-        _ => {}
     }
+    let mut definition = if strict_read_only || strict_workflow_write {
+        request.subagent_type = "explore".to_string();
+        request.resume_from = None;
+        request.fork_context = false;
+        request.runtime_overrides.persona = None;
+        request.runtime_overrides.capability_mode = Some(if strict_workflow_write {
+            xai_tool_types::SubagentCapabilityMode::ReadWrite
+        } else {
+            xai_tool_types::SubagentCapabilityMode::ReadOnly
+        });
+        request.runtime_overrides.isolation = Some(if strict_workflow_write {
+            xai_tool_types::SubagentIsolationMode::Worktree
+        } else {
+            xai_tool_types::SubagentIsolationMode::None
+        });
+        request.runtime_overrides.harness_agent_type = None;
+        let mut definition = strict_workflow_definition(strict_workflow_write);
+        // Preserve the parent operator's final --tools/--disallowed-tools
+        // clamp. It can remove read capabilities but never add beyond this
+        // profile's exact three-tool set.
+        ctx.apply_session_cli_overrides(&mut definition);
+        definition.permission_mode = if strict_workflow_write {
+            xai_grok_agent::config::PermissionMode::AcceptEdits
+        } else {
+            xai_grok_agent::config::PermissionMode::Plan
+        };
+        clamp_strict_workflow_context(&mut ctx, strict_workflow_write);
+        definition
+    } else {
+        let Some(definition) = resolve_agent_definition(&request.subagent_type, &ctx)
+        else {
+            let msg = format!("Unknown subagent type: {}", request.subagent_type);
+            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+            return;
+        };
+        match gate_subagent_type(&request.subagent_type, &ctx) {
+            SubagentValidateTypeOutcome::Disabled => {
+                let msg = format!(
+                    "Subagent '{}' is disabled via [subagents.toggle] in config.toml",
+                    request.subagent_type
+                );
+                send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+                return;
+            }
+            SubagentValidateTypeOutcome::NotAllowed { allowed } => {
+                let msg = format!(
+                    "agent can only spawn: {}; '{}' not allowed", allowed.join(", "), request
+                    .subagent_type
+                );
+                send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+                return;
+            }
+            _ => {}
+        }
+        definition
+    };
     let run_in_background = request.run_in_background
         || definition.background.unwrap_or(false);
     let cancel_token = CancellationToken::new();
@@ -116,12 +167,14 @@ pub(crate) async fn handle_subagent_request(
         defused: false,
         error: None,
     };
-    resolve_subagent_toolset(
-        &request.subagent_type,
-        request.runtime_overrides.harness_agent_type.as_deref(),
-        &ctx,
-        &mut definition,
-    );
+    if !strict_read_only && !strict_workflow_write {
+        resolve_subagent_toolset(
+            &request.subagent_type,
+            request.runtime_overrides.harness_agent_type.as_deref(),
+            &ctx,
+            &mut definition,
+        );
+    }
     let (role, role_key) = {
         let by_type = ctx.subagent_roles.get(&request.subagent_type);
         if by_type.is_some() {
@@ -363,6 +416,12 @@ pub(crate) async fn handle_subagent_request(
     } else {
         None
     };
+    if strict_workflow_write && worktree_path.is_none() {
+        let msg = "strict workflow writer could not create or restore its isolated worktree";
+        pending_guard.set_error(msg.to_string());
+        send_failure(request, msg);
+        return;
+    }
     let worktree_freshly_created = resume_source.is_none() && worktree_path.is_some();
     if let Some(raw_cwd) = request.cwd.as_deref() {
         match sanitize_cwd_value(raw_cwd) {
@@ -731,6 +790,13 @@ pub(crate) async fn handle_subagent_request(
         hunk_tracking: ctx.hunk_tracking_enabled && cwd_outside_parent,
         ..FsWatchCapabilities::none()
     };
+    let mut child_session_env = (*ctx.session_env).clone();
+    if strict_read_only || strict_workflow_write {
+        child_session_env.insert(
+            xai_grok_tools::types::resources::INTERNAL_WORKFLOW_FILESYSTEM_ROOT.to_string(),
+            child_cwd.to_string_lossy().into_owned(),
+        );
+    }
     let child_cwd_abs = xai_grok_paths::AbsPathBuf::new(child_cwd)
         .unwrap_or_else(|_| {
             xai_grok_paths::AbsPathBuf::new(std::env::current_dir().unwrap_or_default())
@@ -743,7 +809,7 @@ pub(crate) async fn handle_subagent_request(
             ctx.fs.clone(),
             ctx.terminal.clone(),
             ctx.hunk_tracker_handle.clone(),
-            (*ctx.session_env).clone(),
+            child_session_env,
         )
         .with_hunk_tracking_enabled(ctx.hunk_tracking_enabled);
     tool_ctx.subagent_event_tx = Some(ctx.subagent_event_tx.clone());
@@ -1302,7 +1368,7 @@ pub(crate) async fn handle_subagent_request(
             screen_mode: None,
             verbatim: true,
             traceparent: xai_file_utils::trace_context::current_traceparent(),
-            json_schema: None,
+            json_schema: request.json_schema.clone(),
             send_now: false,
             respond_to: prompt_tx,
             persist_ack: None,
@@ -1506,19 +1572,40 @@ pub(crate) async fn handle_subagent_request(
                         backgrounded: false,
                     }
                 }
-                Ok(Ok(_)) => {
+                Ok(Ok(crate::session::commands::PromptTurnOk {
+                    structured_output: Some(Err(error)),
+                    ..
+                })) => {
+                    SubagentResult {
+                        success: false,
+                        error: Some(format!("Structured output validation failed: {error}")),
+                        output: std::sync::Arc::from(final_text),
+                        subagent_id: request.id.clone(),
+                        child_session_id: child_session_id.0.to_string(),
+                        tool_calls,
+                        turns,
+                        duration_ms,
+                        tokens_used: result_tokens,
+                        worktree_path: worktree_path
+                            .as_ref()
+                            .map(|p| p.to_string_lossy().to_string()),
+                        ..Default::default()
+                    }
+                }
+                Ok(Ok(crate::session::commands::PromptTurnOk {
+                    structured_output,
+                    ..
+                })) => {
                     SubagentResult {
                         success: true,
-                        output: if final_text.is_empty() {
-                            std::sync::Arc::from(
-                                format!(
-                                    "Subagent '{}' ({}) completed successfully. {} tool calls, {} turns.",
-                                    request.description, request.subagent_type, tool_calls,
-                                    turns
-                                ),
-                            )
-                        } else {
-                            std::sync::Arc::from(final_text)
+                        output: match structured_output {
+                            Some(Ok(value)) => std::sync::Arc::from(value.to_string()),
+                            Some(Err(_)) => unreachable!("handled by the preceding match arm"),
+                            None if final_text.is_empty() => std::sync::Arc::from(format!(
+                                "Subagent '{}' ({}) completed successfully. {} tool calls, {} turns.",
+                                request.description, request.subagent_type, tool_calls, turns
+                            )),
+                            None => std::sync::Arc::from(final_text),
                         },
                         subagent_id: request.id.clone(),
                         child_session_id: child_session_id.0.to_string(),
@@ -1963,6 +2050,7 @@ pub(crate) async fn handle_subagent_request(
     };
     let will_wake = should_auto_wake_subagent(
         request.run_in_background,
+        request.surface_completion,
         result.cancelled,
         ctx.auto_wake_enabled,
         block_waited,
@@ -2012,4 +2100,8 @@ pub(crate) async fn handle_subagent_request(
     if let Some(tx) = result_tx.take() {
         let _ = tx.send(result);
     }
+}
+
+pub(super) fn should_skip_abandoned_internal_spawn(request: &SubagentRequest) -> bool {
+    !request.surface_completion && request.result_tx.is_closed()
 }

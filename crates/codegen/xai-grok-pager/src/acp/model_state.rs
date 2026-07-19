@@ -52,6 +52,9 @@ pub struct ModelState {
     pub available: IndexMap<acp::ModelId, acp::ModelInfo>,
     pub current: Option<acp::ModelId>,
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// The session's requested Responses API tier. Codex maps `priority` to
+    /// its user-facing Fast mode.
+    pub service_tier: Option<String>,
     /// External override for the context window size (tokens).
     /// When set, `get_context_window()` returns this instead of
     /// reading from the current model's metadata. Used for subagent
@@ -161,6 +164,9 @@ impl ModelState {
                 .and_then(|id| self.available.get(id))
                 .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()));
         }
+        if !self.current_supports_fast() {
+            self.service_tier = None;
+        }
     }
 
     /// Set the current model and resolve reasoning effort from catalog meta.
@@ -175,6 +181,33 @@ impl ModelState {
                 .get(&model_id)
                 .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()))
         });
+        if !self.current_supports_fast() {
+            self.service_tier = None;
+        }
+    }
+
+    pub fn set_service_tier(&mut self, service_tier: Option<String>) {
+        self.service_tier = service_tier;
+    }
+
+    pub fn current_supports_fast(&self) -> bool {
+        self.current
+            .as_ref()
+            .and_then(|id| self.available.get(id))
+            .and_then(|info| info.meta.as_ref())
+            .and_then(|meta| meta.get("serviceTiers"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|tiers| {
+                tiers.iter().any(|tier| {
+                    tier.get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|id| id.eq_ignore_ascii_case("priority"))
+                })
+            })
+    }
+
+    pub fn is_fast(&self) -> bool {
+        self.service_tier.as_deref() == Some("priority")
     }
 
     /// The reasoning-effort menu for the current model. Gate-first: an unset or
@@ -324,6 +357,7 @@ impl From<Option<acp::SessionModelState>> for ModelState {
                     available: models,
                     current: current_model,
                     reasoning_effort,
+                    service_tier: None,
                     context_window_override: None,
                 }
             })

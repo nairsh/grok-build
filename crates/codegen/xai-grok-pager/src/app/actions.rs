@@ -385,6 +385,9 @@ pub enum Action {
     SwitchModel {
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        /// An explicitly requested service-tier change. `Some(None)` returns
+        /// to Standard; `None` leaves the current session tier unchanged.
+        service_tier_change: Option<Option<String>>,
     },
     /// Cancel the currently running turn.
     CancelTurn,
@@ -548,6 +551,9 @@ pub enum Action {
     /// Clear the persisted fork-secondary model — restores to built-in
     /// default. Active agent keeps its value; next fork uses the default.
     ClearForkSecondaryModel,
+    /// Commit or clear the task model used for session names and recaps.
+    SetTaskModel(acp::ModelId),
+    ClearTaskModel,
     /// Commit the `show_tips` preference. Persisted to `[cli].show_tips`.
     /// Restart-required — tips are resolved once at startup.
     SetShowTips(bool),
@@ -600,6 +606,22 @@ pub enum Action {
     SwitchAccount,
     /// User pressed login on the welcome screen.
     Login,
+    /// Suspend the running TUI and launch the multi-provider setup interface.
+    /// `None` opens its picker; `Some(id)` jumps directly to that provider.
+    OpenProviderLogin {
+        provider: Option<String>,
+    },
+    /// Open the provider manager in credential-removal mode.
+    OpenProviderLogout,
+    /// Remove the active xAI session without replacing the provider manager.
+    LogoutXaiFromProviderModal,
+    /// Start browser-based subscription setup without suspending the TUI.
+    RunProviderLogin {
+        provider: String,
+    },
+    /// Fetch models from the API endpoint currently being configured in the
+    /// native provider-login form.
+    DiscoverProviderModels,
     /// Cancel an in-progress login that was started from inside a session
     /// (`/login` or a 401 re-auth prompt) and return to the previous view.
     /// Distinct from `Quit`: abandoning a mid-session re-auth must not exit
@@ -643,6 +665,24 @@ pub enum Action {
     /// tasks as a system block (`/tasks`). The surface minimal mode uses in
     /// place of the `TasksPane`.
     ShowTasks,
+    /// Open the native Dynamic Workflows / UltraCode control center.
+    OpenWorkflows,
+    /// Execute a control-center request against the owning session.
+    WorkflowRequest(crate::views::workflows_modal::WorkflowUiRequest),
+    /// Ask the model to preview and run a saved workflow.
+    RunSavedWorkflow(String),
+    /// Apply a completed write worker's isolated worktree to this checkout.
+    ApplyWorkflowWorktree {
+        worktree_path: String,
+    },
+    /// Load the isolated worker's changed files and patches for native review.
+    ReviewWorkflowWorktree {
+        run_id: String,
+        worker_id: String,
+        worktree_path: String,
+    },
+    /// Enable, disable, or toggle UltraCode for this session.
+    SetUltracode(Option<bool>),
     /// Show the current plan: preview popover if exists, toast if not.
     ShowPlan,
     /// Enter plan mode. If a description is provided, also start a turn
@@ -1107,8 +1147,8 @@ impl PlanModeKind {
 /// variant needs no agent/schema change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelTrigger {
-    /// Wire value `"esc"` (set only by the Esc cancel-retry while
-    /// TurnCancelling; a bare Esc no longer starts a cancel).
+    /// Wire value `"esc"` (set by a confirmed double-Esc interrupt or an
+    /// Esc cancel-retry while TurnCancelling).
     Esc,
     /// `Ctrl+C` pressed (the default cancel keybinding).
     CtrlC,
@@ -1318,6 +1358,34 @@ pub enum ProbedAttachment {
 }
 #[derive(Debug)]
 pub enum Effect {
+    WorkflowRequest {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        request: crate::views::workflows_modal::WorkflowUiRequest,
+    },
+    ApplyWorkflowWorktree {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        worktree_path: String,
+    },
+    ReviewWorkflowWorktree {
+        agent_id: AgentId,
+        session_id: acp::SessionId,
+        worktree_path: String,
+    },
+    /// Authenticate a subscription provider in the system browser while the
+    /// current TUI and session remain alive.
+    ProviderOauthLogin { agent_id: AgentId, provider: String },
+    /// Remove the current xAI session from the provider manager.
+    ProviderXaiLogout { agent_id: AgentId },
+    /// Fetch an OpenAI-compatible `/models` catalog without suspending the
+    /// running TUI. The API key is kept only for this in-flight request.
+    ProviderModelDiscovery {
+        agent_id: AgentId,
+        request_id: u64,
+        base_url: String,
+        api_key: String,
+    },
     /// Create a new ACP session.
     CreateSession {
         agent_id: AgentId,
@@ -1505,6 +1573,7 @@ pub enum Effect {
         session_id: acp::SessionId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        service_tier_change: Option<Option<String>>,
         /// The model that was active before the optimistic UI update
         /// in `set_default_model`. `None` for `Action::SwitchModel`
         /// (no optimistic update). Threaded through to
@@ -2048,6 +2117,36 @@ pub enum SubagentKillOutcome {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    WorkflowResponse {
+        agent_id: AgentId,
+        request: crate::views::workflows_modal::WorkflowUiRequest,
+        result: Result<serde_json::Value, String>,
+    },
+    WorkflowWorktreeApplied {
+        agent_id: AgentId,
+        result: Result<serde_json::Value, String>,
+    },
+    WorkflowWorktreeReviewed {
+        agent_id: AgentId,
+        result: Result<serde_json::Value, String>,
+    },
+    /// Browser-based provider setup completed (or failed) while Atlas stayed open.
+    ProviderOauthLoginComplete {
+        agent_id: AgentId,
+        provider: String,
+        result: Result<(), String>,
+    },
+    /// The xAI credential was removed from the provider manager.
+    ProviderXaiLogoutComplete {
+        agent_id: AgentId,
+        result: Result<(), String>,
+    },
+    /// OpenAI-compatible model discovery completed for the native login form.
+    ProviderModelDiscoveryComplete {
+        agent_id: AgentId,
+        request_id: u64,
+        result: Result<Vec<String>, String>,
+    },
     /// Session was created successfully.
     SessionCreated {
         agent_id: AgentId,
@@ -2264,6 +2363,7 @@ pub enum TaskResult {
         agent_id: AgentId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        service_tier_change: Option<Option<String>>,
         result: Result<(), SwitchModelError>,
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.

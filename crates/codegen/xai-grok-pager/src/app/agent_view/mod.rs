@@ -26,7 +26,7 @@
 //!       on an empty prompt) re-enters this level and runs CancelTurn.
 //!   → 3. Esc policy (try_handle_esc_policy) on Prompt or Scrollback only,
 //!       after overlays/dropdowns/selection returned Changed / stole Esc:
-//!       turn running → Changed (swallow; Esc does not cancel)
+//!       turn running → ArmPending CancelTurn (2× within 800ms, hint)
 //!       turn cancelling → CancelTurn (retry lost ack; Ctrl+C escalates to Quit)
 //!       idle + non-empty prompt, prompt pane only → ArmPending ClearPrompt (2× within 800ms, hint)
 //!       idle + empty + messages, either pane (Normal composer mode, no
@@ -1147,6 +1147,9 @@ pub struct AgentView {
     /// Active hooks/plugins modal popup. When `Some`, blocks all input and
     /// renders as a centered overlay. Opened by `/hooks`, `/plugins`, or `/mcps`.
     pub(crate) extensions_modal: Option<ExtensionsModalState>,
+    /// Durable workflow run state plus the session-scoped UltraCode mode.
+    /// Kept outside the modal so live progress remains available while closed.
+    pub(crate) workflows: crate::views::workflows_modal::WorkflowUiModel,
     /// Active agents modal popup. When `Some`, blocks all input and
     /// renders as a centered overlay. Opened by `/config-agents` or `/agents`.
     pub(crate) agents_modal: Option<crate::views::agents_modal::AgentsModalState>,

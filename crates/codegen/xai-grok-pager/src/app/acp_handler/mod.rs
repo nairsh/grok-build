@@ -613,6 +613,7 @@ fn handle_ext_notification(notif: &acp::ExtNotification, app: &mut AppView) -> b
         "x.ai/session/prompt_complete" => handle_prompt_complete(notif, app),
         "x.ai/session/interjection" => handle_interjection(notif, app),
         "x.ai/monitor_event" => handle_monitor_event(notif, app),
+        "x.ai/workflow_progress" => handle_workflow_progress(notif, app),
         "x.ai/scheduled_task_created" => handle_scheduled_task_created(notif, app),
         "x.ai/scheduled_task_fired" => handle_scheduled_task_fired(notif, app),
         "x.ai/scheduled_task_deleted" => handle_scheduled_task_deleted(notif, app),
@@ -627,6 +628,47 @@ fn handle_ext_notification(notif: &acp::ExtNotification, app: &mut AppView) -> b
         "x.ai/mcp/servers_updated" => handle_mcp_servers_updated(notif, app),
         _ => false,
     }
+}
+
+fn handle_workflow_progress(notif: &acp::ExtNotification, app: &mut AppView) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(notif.params.get()) else {
+        tracing::warn!("Failed to parse x.ai/workflow_progress");
+        return false;
+    };
+    let Some(session_id) = value.get("sessionId").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    let Some(snapshot_value) = value.get("snapshot").cloned() else {
+        return false;
+    };
+    let Ok(snapshot) = serde_json::from_value::<
+        xai_grok_tools::implementations::grok_build::workflow::supervisor::WorkflowRunSnapshot,
+    >(snapshot_value) else {
+        tracing::warn!("Invalid workflow snapshot in x.ai/workflow_progress");
+        return false;
+    };
+    let sid = acp::SessionId::new(session_id.to_string());
+    let Some(SessionMatch::Root(agent_id)) = find_session_match(app, &sid) else {
+        return false;
+    };
+    let is_active = is_matched_agent_active(app, agent_id);
+    let Some(agent) = app.agents.get_mut(&agent_id) else {
+        return false;
+    };
+    agent.workflows.apply_snapshot(snapshot.clone());
+    if let Some(crate::views::modal::ActiveModal::Workflows { state }) = agent.active_modal.as_mut()
+    {
+        if let Some(existing) = state
+            .runs
+            .iter_mut()
+            .find(|run| run.run_id == snapshot.run_id)
+        {
+            *existing = snapshot;
+        } else {
+            state.runs.insert(0, snapshot);
+        }
+    }
+    is_active
 }
 
 /// Handle `x.ai/session/interjection` — the leader broadcasts this

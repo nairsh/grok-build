@@ -160,6 +160,7 @@ pub(crate) fn make_request(
     let req = SubagentRequest {
         id: uuid::Uuid::now_v7().to_string(),
         prompt: "do something".into(),
+        json_schema: None,
         description: "test task".into(),
         subagent_type: subagent_type.into(),
         parent_session_id: "test-parent".into(),
@@ -170,6 +171,8 @@ pub(crate) fn make_request(
         run_in_background: false,
         surface_completion: true,
         fork_context: false,
+        strict_read_only: false,
+        strict_workflow_write: false,
         result_tx: tx,
     };
     (req, rx)

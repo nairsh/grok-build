@@ -257,6 +257,24 @@ impl SessionHandle {
         }
         rx.await.unwrap_or(None)
     }
+    pub async fn workflow_control(
+        &self,
+        request: crate::extensions::workflow::WorkflowControlRequest,
+    ) -> Result<serde_json::Value, String> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(SessionCommand::WorkflowControl {
+                request,
+                respond_to: tx,
+            })
+            .is_err()
+        {
+            return Err("session not found".to_string());
+        }
+        rx.await
+            .unwrap_or_else(|_| Err("session actor died".to_string()))
+    }
     /// Get hooks list for the pager modal.
     pub async fn get_hooks_list(&self) -> Option<xai_hooks_plugins_types::HooksListResponse> {
         let (tx, rx) = oneshot::channel();

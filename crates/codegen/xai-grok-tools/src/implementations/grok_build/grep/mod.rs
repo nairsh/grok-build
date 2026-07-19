@@ -714,6 +714,10 @@ async fn prepare_grep(
         display_cwd.as_deref(),
         input.path.as_deref().unwrap_or(""),
     );
+    {
+        let res = resources.lock().await;
+        crate::types::resources::enforce_workflow_filesystem_root(&res, &workdir)?;
+    }
     // Use display_cwd for output paths so model sees stable paths.
     let display_base = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
     let cwd_display = display_base.display().to_string();

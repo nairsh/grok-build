@@ -1,0 +1,140 @@
+# Builds the Atlas CLI for every supported platform and publishes the
+# binaries as GitHub Release assets on this fork.
+#
+# Asset names must stay exactly `grok-<version>-<os>-<arch>` — the in-app
+# auto-updater's `gh-release` installer downloads assets by that literal
+# pattern (see crates/codegen/xai-grok-update/src/auto_update.rs,
+# `install_gh_release`), and tags must be `v<version>` (see
+# `fetch_gh_release_version` in crates/codegen/xai-grok-update/src/version.rs).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Create/update the GitHub Release for the crate version"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            runner: macos-14
+            target: aarch64-apple-darwin
+          - platform: macos-x86_64
+            runner: macos-13
+            target: x86_64-apple-darwin
+          # Linux builds are omitted: this team only uses macOS and Windows.
+          # To re-add, restore a matrix entry such as
+          #   - platform: linux-x86_64
+          #     runner: ubuntu-22.04
+          #     target: x86_64-unknown-linux-gnu
+          # (linux-aarch64 additionally needs the `ubuntu-22.04-arm` runner,
+          # which is unavailable on private repositories).
+          - platform: windows-x86_64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(cargo metadata --no-deps --format-version 1 \
+              | python3 -c 'import json,sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "xai-grok-pager-bin"][0])')"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust target
+        shell: bash
+        # rustup reads the pinned toolchain from rust-toolchain.toml.
+        run: rustup show && rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+
+      - name: Build distribution binary
+        shell: bash
+        env:
+          # Compiled-in version must match the release tag so the updater's
+          # installed-vs-latest comparison is consistent.
+          GROK_VERSION: ${{ steps.version.outputs.version }}
+        # Mirrors the documented distribution build: hardened release-dist
+        # profile plus the release-dist feature gate (see [profile.release-dist]
+        # in Cargo.toml).
+        run: |
+          cargo build --profile release-dist \
+            -p xai-grok-pager-bin --bin atlas \
+            --features release-dist \
+            --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          asset="grok-${version}-${{ matrix.platform }}"
+          mkdir -p dist
+          if [[ "${{ matrix.platform }}" == windows-* ]]; then
+            cp "target/${{ matrix.target }}/release-dist/atlas.exe" "dist/${asset}"
+            cp "target/${{ matrix.target }}/release-dist/atlas.exe" "dist/${asset}.exe"
+          else
+            cp "target/${{ matrix.target }}/release-dist/atlas" "dist/${asset}"
+            chmod +x "dist/${asset}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grok-${{ steps.version.outputs.version }}-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    if: github.ref_type == 'tag' || inputs.publish_release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          assets=(artifacts/grok-*)
+          version="$(basename "${assets[0]}" | sed -E 's/^grok-([0-9]+\.[0-9]+\.[0-9]+[^-]*)-.*/\1/')"
+          tag="v${version}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Atlas CLI ${version}" \
+              --notes "Automated build of Atlas CLI ${version} for internal use. Installable via the in-app updater (gh-release installer)."
+          fi

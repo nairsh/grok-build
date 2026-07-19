@@ -19,8 +19,13 @@ pub enum Command {
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
     Logout,
-    /// Sign in to Grok
+    /// Sign in (interactive menu: subscription OAuth or API key). Flags below
+    /// select the direct xAI path for scripting.
     Login {
+        /// Provider id or name (for example: openrouter, google, openai-codex).
+        /// Omit to open the provider picker.
+        #[arg(value_name = "PROVIDER", conflicts_with_all = ["oauth", "device_auth"])]
+        provider: Option<String>,
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
         #[arg(long, hide = true)]
         legacy: bool,
@@ -408,9 +413,9 @@ fn version_with_channel() -> &'static str {
 }
 #[derive(Debug, Clone, Parser)]
 #[command(
-    name = "grok",
+    name = "atlas",
     version = version_with_channel(),
-    about = "Grok Build TUI",
+    about = "Atlas TUI (multi-provider Grok Build fork)",
     disable_version_flag = true,
     next_display_order = None,
     help_template = "\
@@ -778,8 +783,8 @@ impl PagerArgs {
             .map(std::path::Path::new)
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .filter(|n| *n == "grok" || *n == "agent")
-            .unwrap_or("grok")
+            .filter(|n| *n == "atlas" || *n == "grok" || *n == "agent")
+            .unwrap_or("atlas")
             .to_owned();
         let mut args = Self::parse_from(std::iter::once(bin_name).chain(std::env::args().skip(1)));
         if let Some(socket) = args.leader_socket.take() {

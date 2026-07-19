@@ -493,7 +493,8 @@ Log in or re-authenticate with your account without leaving the session.
 
 ### `/logout`
 
-Log out and return to the login screen.
+Open the provider manager with only saved connections. Select a provider to
+remove its stored credential without leaving the current session.
 
 ```
 /logout

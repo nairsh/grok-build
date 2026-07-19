@@ -500,6 +500,7 @@ mod tests {
     fn fully_populated_override() -> ConfigModelOverride {
         ConfigModelOverride {
             model: Some("m".into()),
+            connection: Some("openai".into()),
             base_url: Some("https://example.com".into()),
             name: Some("Model M".into()),
             description: Some("desc".into()),

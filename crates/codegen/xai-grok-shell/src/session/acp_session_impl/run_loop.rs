@@ -30,6 +30,122 @@ mod yolo_toggle_report_tests {
 /// Best-effort removal of this session's per-session scratch staging on
 /// teardown. A no-op in builds without a scratch producer.
 fn cleanup_session_scratch(_session: &SessionActor) {}
+
+async fn handle_workflow_control(
+    session: &SessionActor,
+    request: crate::extensions::workflow::WorkflowControlRequest,
+) -> Result<serde_json::Value, String> {
+    use crate::extensions::workflow::WorkflowControlAction;
+    use xai_grok_tools::implementations::grok_build::task::backend::SubagentBackendResource;
+    use xai_grok_tools::implementations::grok_build::workflow::{controls, supervisor};
+    use xai_grok_tools::types::resources::SessionFolder;
+
+    if matches!(request.action, WorkflowControlAction::SetUltracode) {
+        let enabled = request.enabled.unwrap_or(false);
+        let reminder = if enabled {
+            "UltraCode is enabled for this session. Use Dynamic Workflows by default for substantive tasks that benefit from parallel discovery, implementation, review, or verification. Prefer multiple inspectable workflow stages, require workflow_preview approval before execution, and prioritize verification."
+        } else {
+            "UltraCode is disabled for this session. Do not automatically choose Dynamic Workflows; use them only when the user explicitly requests a workflow."
+        };
+        session.push_system_reminder(reminder);
+        return Ok(serde_json::json!({ "enabled": enabled }));
+    }
+
+    let bridge = session.agent.borrow().tool_bridge().clone();
+    let resources = bridge.shared_resources().await;
+    let (handle, session_folder, backend) = {
+        let locked = resources.lock().await;
+        (
+            locked
+                .get::<supervisor::WorkflowSupervisorHandle>()
+                .cloned()
+                .ok_or_else(|| "workflow supervisor is unavailable".to_string())?,
+            locked
+                .get::<SessionFolder>()
+                .map(|folder| folder.0.clone())
+                .ok_or_else(|| "session folder is unavailable".to_string())?,
+            locked.get::<SubagentBackendResource>().cloned(),
+        )
+    };
+
+    let run_id = || {
+        request
+            .run_id
+            .clone()
+            .ok_or_else(|| "this workflow action requires run_id".to_string())
+            .and_then(|id| supervisor::validate_run_id(&id))
+    };
+    match request.action {
+        WorkflowControlAction::List => serde_json::to_value(supervisor::list(&handle).await?)
+            .map_err(|error| error.to_string()),
+        WorkflowControlAction::Inspect => {
+            let id = run_id()?;
+            serde_json::to_value(
+                supervisor::get(&handle, id.clone())
+                    .await?
+                    .ok_or_else(|| format!("workflow run '{id}' was not found"))?,
+            )
+            .map_err(|error| error.to_string())
+        }
+        WorkflowControlAction::Workers => {
+            let id = run_id()?;
+            controls::read_journal_tail(
+                &supervisor::run_dir(&session_folder, &id).join("journal.jsonl"),
+            )
+            .map_err(|error| error.to_string())
+        }
+        WorkflowControlAction::Pause | WorkflowControlAction::Cancel => {
+            let id = run_id()?;
+            let snapshot = supervisor::stop(
+                &handle,
+                id,
+                matches!(request.action, WorkflowControlAction::Pause),
+            )
+            .await?;
+            serde_json::to_value(snapshot).map_err(|error| error.to_string())
+        }
+        WorkflowControlAction::Resume => {
+            let id = run_id()?;
+            let mut ctx = xai_tool_runtime::ToolCallContext::default();
+            ctx.extensions.insert(resources);
+            let output = controls::resume_run(ctx, session_folder, id, true)
+                .await
+                .map_err(|error| error.to_string())?;
+            match output {
+                xai_grok_tools::types::output::ToolOutput::Text(text) => {
+                    serde_json::from_str(&text.text)
+                        .or_else(|_| Ok(serde_json::json!({ "message": text.text })))
+                        .map_err(|error: serde_json::Error| error.to_string())
+                }
+                other => serde_json::to_value(other).map_err(|error| error.to_string()),
+            }
+        }
+        WorkflowControlAction::CancelWorker => {
+            let id = run_id()?;
+            let worker_id = request
+                .worker_id
+                .ok_or_else(|| "cancel_worker requires worker_id".to_string())?;
+            if !worker_id.starts_with(&format!("workflow-{id}-")) {
+                return Err("worker_id does not belong to the requested workflow run".into());
+            }
+            let backend = backend.ok_or_else(|| "subagent backend is unavailable".to_string())?;
+            let outcome = backend.0.cancel(&worker_id).await;
+            Ok(match outcome {
+                xai_grok_tools::implementations::grok_build::task::types::SubagentCancelOutcome::Cancelled => {
+                    serde_json::json!({ "workerId": worker_id, "status": "cancelled" })
+                }
+                xai_grok_tools::implementations::grok_build::task::types::SubagentCancelOutcome::AlreadyFinished { status } => {
+                    serde_json::json!({ "workerId": worker_id, "status": "already_finished", "workerStatus": status })
+                }
+                xai_grok_tools::implementations::grok_build::task::types::SubagentCancelOutcome::NotFound => {
+                    serde_json::json!({ "workerId": worker_id, "status": "not_found" })
+                }
+            })
+        }
+        WorkflowControlAction::SetUltracode => unreachable!(),
+    }
+}
+
 pub(super) async fn run_session(
     session: Arc<SessionActor>,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
@@ -303,10 +419,10 @@ pub(super) async fn run_session(
             SessionActor::maybe_start_running_task(session.clone(), completion_tx
             .clone()). await; } SessionCommand::SessionMode { session_mode, responds_to }
             => { session.handle_session_mode(session_mode). await; let _ = responds_to
-            .send(()); } SessionCommand::SetSessionModel { sampling_config, use_concise,
+            .send(()); } SessionCommand::SetSessionModel { sampling_config, service_tier_override, use_concise,
             apply_prompt_override, skip_prompt_rewrite, auto_compact_threshold_percent,
             responds_to } => { let updated_model_id = session
-            .handle_set_session_model(sampling_config, use_concise,
+            .handle_set_session_model(sampling_config, service_tier_override, use_concise,
             apply_prompt_override, skip_prompt_rewrite, auto_compact_threshold_percent).
             await; let _ = responds_to.send(updated_model_id); }
             SessionCommand::RebuildAgentForDefinition { definition, responds_to } => {
@@ -350,7 +466,9 @@ pub(super) async fn run_session(
             .delete_scheduled_task(& task_id). await .map_err(| e | e.to_string()); let _
             = respond_to.send(result); } SessionCommand::ListTasks { respond_to } => {
             let result = session.agent.borrow().tool_bridge().list_tasks(). await; let _
-            = respond_to.send(result); } SessionCommand::GetHooksList { respond_to } => {
+            = respond_to.send(result); } SessionCommand::WorkflowControl { request,
+            respond_to } => { let result = handle_workflow_control(& session, request).
+            await; let _ = respond_to.send(result); } SessionCommand::GetHooksList { respond_to } => {
             use crate ::extensions::hooks::hook_spec_to_info; let hooks = match &*
             session.hook_registry.borrow() { Some(registry) => registry.all_hooks()
             .iter().map(| spec | hook_spec_to_info(spec)).collect(), None => Vec::new(),

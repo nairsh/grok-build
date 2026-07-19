@@ -1796,6 +1796,7 @@ async fn async_main() -> Result<()> {
             Command::Models => {
                 init_tracing_simple("cli");
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
+                xai_grok_shell::agent::provider_catalog::prepare_connected_providers().await;
                 let config = xai_grok_shell::config::load_effective_config_disk_only()
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let agent_config = AgentConfig::new_from_toml_cfg(&config)
@@ -1878,6 +1879,7 @@ async fn async_main() -> Result<()> {
                 .await;
             }
             Command::Login {
+                provider,
                 legacy: _,
                 oauth,
                 device_auth,
@@ -1889,7 +1891,19 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
+                // Bare `atlas login` opens the interactive menu (subscription
+                // OAuth or API key). Explicit flags keep the direct xAI path for
+                // scripts/backward compatibility.
+                if let Some(provider) = provider.as_deref() {
+                    xai_grok_shell::agent::login_interactive::run_provider_login(&config, provider)
+                        .await?;
+                } else if !oauth && !device_auth && !devbox {
+                    xai_grok_shell::agent::login_interactive::run_interactive_login(&config)
+                        .await?;
+                } else {
+                    xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox)
+                        .await?;
+                }
                 println!();
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }
@@ -1915,6 +1929,7 @@ async fn async_main() -> Result<()> {
             }
         }
     }
+    xai_grok_shell::agent::provider_catalog::prepare_connected_providers().await;
     let headless_prompt = xai_grok_pager::headless::HeadlessPrompt::from_args(
         args.single.as_deref(),
         args.prompt_json.as_deref(),

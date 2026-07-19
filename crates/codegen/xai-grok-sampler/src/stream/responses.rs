@@ -10,8 +10,8 @@ use futures_util::StreamExt;
 use futures_util::stream::{BoxStream, Stream};
 
 use xai_grok_sampling_types::{
-    ConversationItem, ConversationResponse, ResponseModelMetadata, SamplingError, StopReason,
-    TokenUsage, rs,
+    AssistantItem, ConversationItem, ConversationResponse, ResponseModelMetadata, SamplingError,
+    StopReason, TokenUsage, ToolCall, rs,
 };
 
 use crate::events::{SamplingChannel, SamplingErrorInfo, SamplingEvent};
@@ -120,6 +120,7 @@ pub fn stream_responses<'a>(
         let mut chunk_index: u64 = 0;
         let mut message_chunk_count: u64 = 0;
         let mut first_token_emitted = false;
+        let mut text_acc = String::new();
         let mut reasoning_acc = String::new();
         let mut last_content_chunk_at = Instant::now();
 
@@ -129,6 +130,10 @@ pub fn stream_responses<'a>(
         // look up `output_index` here to find the matching `tool_index`.
         let mut output_to_tool_index: BTreeMap<u32, u32> = BTreeMap::new();
         let mut next_tool_index: u32 = 0;
+        // ChatGPT Codex streams function calls correctly but can omit them
+        // from its terminal response. Retain the streamed form so the
+        // completed conversation still asks the local agent to execute them.
+        let mut tool_call_acc: BTreeMap<u32, (String, String, String)> = BTreeMap::new();
 
         let mut stream = raw_stream;
         loop {
@@ -185,6 +190,7 @@ pub fn stream_responses<'a>(
                 ResponseStreamEvent::ResponseOutputTextDelta(text_delta_event) => {
                     let delta = text_delta_event.delta;
                     if !delta.is_empty() {
+                        text_acc.push_str(&delta);
                         if !first_token_emitted {
                             first_token_emitted = true;
                             yield SamplingEvent::FirstToken {
@@ -206,6 +212,10 @@ pub fn stream_responses<'a>(
                 ResponseStreamEvent::ResponseReasoningSummaryTextDelta(summary_event) => {
                     let delta = summary_event.delta;
                     if !delta.is_empty() {
+                        // Some Codex terminal events omit the streamed summary.
+                        // Retain it so the finished turn and session replay keep
+                        // the same user-visible thought text.
+                        reasoning_acc.push_str(&delta);
                         if !first_token_emitted {
                             first_token_emitted = true;
                             yield SamplingEvent::FirstToken {
@@ -249,6 +259,10 @@ pub fn stream_responses<'a>(
                         let tool_index = next_tool_index;
                         next_tool_index += 1;
                         output_to_tool_index.insert(added_event.output_index, tool_index);
+                        tool_call_acc.insert(
+                            tool_index,
+                            (fc.call_id.clone(), fc.name.clone(), String::new()),
+                        );
 
                         yield SamplingEvent::ToolCallDelta {
                             request_id: request_id.clone(),
@@ -268,6 +282,9 @@ pub fn stream_responses<'a>(
                         && let Some(&tool_index) =
                             output_to_tool_index.get(&args_event.output_index)
                     {
+                        if let Some((_, _, arguments)) = tool_call_acc.get_mut(&tool_index) {
+                            arguments.push_str(&delta);
+                        }
                         yield SamplingEvent::ToolCallDelta {
                             request_id: request_id.clone(),
                             tool_index,
@@ -462,6 +479,46 @@ pub fn stream_responses<'a>(
         // `summary` (the streaming deltas may have arrived out of band).
         // Splice policy lives in `inject_streaming_reasoning_fallback`.
         let mut items = xai_grok_sampling_types::response_to_conversation_items(response);
+        let streamed_tool_calls: Vec<ToolCall> = tool_call_acc
+            .into_values()
+            .map(|(id, name, arguments)| ToolCall {
+                id: id.into(),
+                name,
+                arguments: arguments.into(),
+            })
+            .collect();
+        if !streamed_tool_calls.is_empty() {
+            if let Some(ConversationItem::Assistant(assistant)) = items
+                .iter_mut()
+                .find(|item| matches!(item, ConversationItem::Assistant(_)))
+            {
+                if assistant.tool_calls.is_empty() {
+                    assistant.tool_calls = streamed_tool_calls;
+                }
+            } else {
+                items.push(ConversationItem::Assistant(AssistantItem {
+                    content: "".into(),
+                    tool_calls: streamed_tool_calls,
+                    model_id: None,
+                    model_fingerprint: None,
+                    reasoning_effort: None,
+                }));
+            }
+        }
+        if !text_acc.is_empty()
+            && !items.iter().any(|item| {
+                matches!(item, ConversationItem::Assistant(assistant) if !assistant.content.is_empty())
+            })
+        {
+            if let Some(ConversationItem::Assistant(assistant)) = items
+                .iter_mut()
+                .find(|item| matches!(item, ConversationItem::Assistant(_)))
+            {
+                assistant.content = text_acc.into();
+            } else {
+                items.push(ConversationItem::assistant(text_acc));
+            }
+        }
         xai_grok_sampling_types::inject_streaming_reasoning_fallback(&mut items, reasoning_acc);
 
         let has_tool_calls = items.iter().any(|i| match i {
@@ -587,6 +644,18 @@ mod tests {
         })
     }
 
+    fn reasoning_summary_delta_event(delta: &str) -> rs::ResponseStreamEvent {
+        rs::ResponseStreamEvent::ResponseReasoningSummaryTextDelta(
+            rs_types::ResponseReasoningSummaryTextDeltaEvent {
+                sequence_number: 0,
+                item_id: "reasoning-1".into(),
+                output_index: 0,
+                summary_index: 0,
+                delta: delta.into(),
+            },
+        )
+    }
+
     fn completed_event() -> rs::ResponseStreamEvent {
         rs::ResponseStreamEvent::ResponseCompleted(rs_types::ResponseCompletedEvent {
             response: empty_completed_response(),
@@ -653,9 +722,41 @@ mod tests {
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
                 assert_eq!(response.stop_reason, Some(StopReason::Stop));
+                assert_eq!(response.assistant_text(), "hello");
             }
             other => panic!("expected Completed, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn streamed_reasoning_summary_is_retained_in_completed_response() {
+        let raw = stream::iter(vec![
+            Ok(reasoning_summary_delta_event("Inspected the directory.")),
+            Ok(text_delta_event("Done")),
+            Ok(completed_event()),
+        ])
+        .boxed();
+        let events = collect(stream_responses(
+            raw,
+            None,
+            rid(),
+            Duration::from_secs(60),
+            None,
+        ))
+        .await;
+
+        let SamplingEvent::Completed { response, .. } = events.last().unwrap() else {
+            panic!("expected Completed event");
+        };
+        assert!(response.items.iter().any(|item| matches!(
+            item,
+            ConversationItem::Reasoning(reasoning)
+                if reasoning.summary.iter().any(|part| matches!(
+                    part,
+                    rs_types::SummaryPart::SummaryText(text)
+                        if text.text == "Inspected the directory."
+                ))
+        )));
     }
 
     #[tokio::test]
@@ -847,6 +948,22 @@ mod tests {
         assert_eq!(deltas[1].2, None);
         assert_eq!(deltas[1].3.as_deref(), Some("{\"x\":"));
         assert_eq!(deltas[2].3.as_deref(), Some("1}"));
+
+        let SamplingEvent::Completed { response, .. } = evs.last().unwrap() else {
+            panic!("expected completed response");
+        };
+        let tool_calls = response
+            .items
+            .iter()
+            .find_map(|item| match item {
+                ConversationItem::Assistant(assistant) => Some(&assistant.tool_calls),
+                _ => None,
+            })
+            .expect("assistant item");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id.as_ref(), "call_xyz");
+        assert_eq!(tool_calls[0].name, "do_thing");
+        assert_eq!(tool_calls[0].arguments.as_ref(), "{\"x\":1}");
     }
 
     #[tokio::test]
