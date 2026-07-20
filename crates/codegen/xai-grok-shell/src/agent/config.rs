@@ -3384,7 +3384,11 @@ fn add_builtin_subscription_models_with_store(
     // model, but its rollout is occasionally incomplete. Keep these Codex
     // choices available during that gap without overwriting server metadata.
     add_builtin_openai_subscription_model(cfg, resolved, store);
-    add_builtin_anthropic_subscription_model(cfg, resolved, store);
+    // The Anthropic Pro/Max subscription is no longer surfaced as a raw-API
+    // model here — that reverse-engineered OAuth path has been removed. Claude
+    // subscription use now runs through the Claude Agent SDK harness backend
+    // (`crate::agent::claude_agent`), which is not an HTTP model and so is not
+    // registered in this list.
 }
 
 fn add_builtin_openai_subscription_model(
@@ -3497,31 +3501,6 @@ fn codex_fallback_reasoning_efforts() -> Vec<ReasoningEffortOption> {
     .collect()
 }
 
-fn add_builtin_anthropic_subscription_model(
-    cfg: &Config,
-    resolved: &mut IndexMap<String, ModelEntry>,
-    store: &crate::agent::credential_store::CredentialStore,
-) {
-    const MODEL_ID: &str = "claude-opus-4-6";
-    const CATALOG_ID: &str = "anthropic/claude-opus-4-6";
-    let builtins = crate::agent::connection::builtin_connections();
-    let Some(connection) = crate::agent::connection::resolve_connection(
-        &cfg.connections,
-        "anthropic-subscription",
-        &builtins,
-    ) else {
-        return;
-    };
-    let mut entry = ModelEntry::fallback(MODEL_ID, &cfg.endpoints);
-    connection.apply_as_base_with_store(&mut entry, store);
-    if !entry.has_own_credentials() {
-        return;
-    }
-    entry.info.name = Some("Claude Opus 4.6 (subscription)".to_owned());
-    entry.info.description = Some("Anthropic Claude through your Pro/Max subscription".to_owned());
-    entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
-    resolved.insert(CATALOG_ID.to_owned(), entry);
-}
 /// Layer 6 of [`resolve_model_list`]: fold the global `[models].extra_headers`
 /// into every model as a base. The presence check is case-insensitive because
 /// the sampler lowers these into an `http::HeaderMap`, so a global `X-Foo` must
@@ -5291,8 +5270,12 @@ mod tests {
         );
     }
 
+    /// The reverse-engineered Anthropic subscription OAuth path is disabled: a
+    /// stored `anthropic` OAuth credential must NOT resurrect a raw-API model.
+    /// Claude subscription use now goes through the Claude Agent SDK harness
+    /// (`crate::agent::claude_agent`), which is not registered in this list.
     #[test]
-    fn saved_anthropic_oauth_adds_a_bearer_authenticated_model() {
+    fn saved_anthropic_oauth_does_not_add_a_raw_api_model() {
         let mut store = crate::agent::credential_store::CredentialStore::default();
         store.put(
             "anthropic",
@@ -5309,13 +5292,10 @@ mod tests {
         let mut models = IndexMap::new();
         add_builtin_subscription_models_with_store(&cfg, &mut models, &store);
 
-        let model = models
-            .get("anthropic/claude-opus-4-6")
-            .expect("Anthropic subscription model is added");
-        assert_eq!(model.api_key.as_deref(), Some("anthropic-oauth-token"));
-        assert_eq!(model.info.api_backend, ApiBackend::Messages);
-        assert_eq!(model.info.auth_scheme, xai_grok_sampler::AuthScheme::Bearer);
-        assert!(model.info.extra_headers["anthropic-beta"].contains("oauth-2025-04-20"));
+        assert!(
+            !models.contains_key("anthropic/claude-opus-4-6"),
+            "the disabled Anthropic OAuth path must not register a subscription model"
+        );
     }
 
     #[test]

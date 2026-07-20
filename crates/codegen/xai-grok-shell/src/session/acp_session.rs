@@ -92,6 +92,8 @@ mod compaction_segments;
 mod types;
 pub(crate) use types::*;
 pub use types::{TodoGateDecision, TodoGateReason};
+#[path = "acp_session_impl/claude_harness_turn.rs"]
+mod claude_harness_turn;
 #[path = "acp_session_impl/goal.rs"]
 mod goal;
 #[path = "acp_session_impl/interjection.rs"]

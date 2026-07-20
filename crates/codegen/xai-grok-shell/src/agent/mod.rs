@@ -2,6 +2,7 @@ pub mod activity;
 pub mod app;
 pub mod auth_method;
 pub mod chat_modes;
+pub mod claude_agent;
 pub mod config;
 pub mod config_model_override_parse;
 pub mod connection;

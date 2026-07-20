@@ -244,27 +244,25 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
             ..Default::default()
         },
     );
+    // NOTE: the former `anthropic-subscription` connection (Claude Pro/Max via a
+    // reverse-engineered OAuth flow hitting the raw Messages API) has been
+    // removed. Subscription use now goes through the Claude Agent SDK harness
+    // (`claude-agent` below), where the agentic work is done by Anthropic's own
+    // harness and auth is delegated to `claude login`. See
+    // `crate::agent::claude_agent`.
+
+    // Routing marker for the Claude Agent SDK harness backend. This is NOT an
+    // HTTP connection — a model referencing `connection = "claude-agent"` is
+    // executed by the harness subprocess (see [`claude_agent::should_use_claude_harness`]),
+    // so the endpoint/adapter fields are intentionally unset. The entry exists
+    // only so the id resolves in the model picker and `/login`.
     m.insert(
-        "anthropic-subscription".to_owned(),
+        crate::agent::claude_agent::CONNECTION_ID.to_owned(),
         ConnectionConfig {
-            adapter: Some(ApiBackend::Messages),
-            base_url: Some("https://api.anthropic.com/v1".to_owned()),
-            auth_scheme: Some(AuthScheme::Bearer),
-            extra_headers: [
-                ("anthropic-version".to_owned(), "2023-06-01".to_owned()),
-                (
-                    "anthropic-beta".to_owned(),
-                    "claude-code-20250219,oauth-2025-04-20".to_owned(),
-                ),
-                (
-                    "anthropic-dangerous-direct-browser-access".to_owned(),
-                    "true".to_owned(),
-                ),
-                ("x-app".to_owned(), "cli".to_owned()),
-            ]
-            .into_iter()
-            .collect(),
-            credential: CredentialRef::Oauth("anthropic".to_owned()),
+            // Sentinel endpoint — never dialed; the turn loop detects it and
+            // routes to the harness subprocess. See `claude_agent::HARNESS_BASE_URL`.
+            base_url: Some(crate::agent::claude_agent::HARNESS_BASE_URL.to_owned()),
+            credential: CredentialRef::None,
             ..Default::default()
         },
     );

@@ -498,12 +498,11 @@ fn build_entries(logout_only: bool) -> Vec<Entry> {
             connected: true,
         });
     }
+    // NOTE: `anthropic-subscription` (Claude Pro/Max via reverse-engineered
+    // OAuth) has been removed. Claude subscription use now runs through the
+    // Claude Agent SDK harness — authenticate with `claude login` (surfaced via
+    // `/login claude-agent`), not this OAuth modal.
     for (provider, label, credential_id) in [
-        (
-            "anthropic-subscription",
-            "Claude Pro / Max",
-            Some("anthropic"),
-        ),
         (
             "openai-codex",
             "ChatGPT Plus / Pro (Codex)",
@@ -580,11 +579,6 @@ fn build_entries(logout_only: bool) -> Vec<Entry> {
     entries.push(Entry::header("Other providers", false));
     for (provider, label, credential_id) in [
         ("xai", "xAI / Grok", None),
-        (
-            "anthropic-subscription",
-            "Claude Pro / Max",
-            Some("anthropic"),
-        ),
         (
             "openai-codex",
             "ChatGPT Plus / Pro (Codex)",

@@ -656,6 +656,7 @@ impl SessionActor {
             ))
             .await;
         let prompt_text_for_hook = user_message.clone();
+        let harness_prompt_text = prompt_text_for_hook.clone();
         {
             if trace_gcs_config.is_some() {
                 self.chat_state_handle.begin_turn_capture();
@@ -753,44 +754,61 @@ impl SessionActor {
         let turn_model_id = self.current_model_id().await;
         let doom_event_model = turn_model_id.clone();
         let turn_timer = std::time::Instant::now();
-        let result = {
-            let mut round_trace = trace_gcs_config;
-            let mut round_artifact = artifact_tracker;
-            loop {
-                if self.goal_harness_enabled() {
-                    let goal_loop_active = self.goal_tracker.lock().status()
-                        == Some(crate::session::goal_tracker::GoalStatus::Active);
-                    self.set_goal_loop_active_resource(goal_loop_active).await;
-                }
-                let round = self
-                    .process_conversation_turn_with_recovery(
-                        prompt_id,
-                        round_trace.take(),
-                        round_artifact.take(),
-                        json_schema.clone(),
-                    )
-                    .await;
-                if !matches!(round, Ok(TurnOutcome::Completed { .. })) {
-                    break round;
-                }
-                if matches!(round, Ok(TurnOutcome::Completed { refusal: true, .. })) {
-                    break round;
-                }
-                let goal_active = laziness_injection_active(
-                    self.goal_harness_enabled(),
-                    self.goal_tracker.lock().status(),
-                );
-                if !goal_active {
-                    break round;
-                }
-                match self.run_goal_round_end().await {
-                    GoalRoundDecision::Continue(directive) => {
-                        self.inject_goal_continuation_message(directive).await;
+        // Claude Agent SDK harness backend: a model resolved from the
+        // `claude-agent` connection carries the sentinel base_url and is
+        // executed by the harness subprocess in place of the sampler loop
+        // below, feeding the same `result` binding so all downstream turn-end
+        // bookkeeping (hooks, telemetry, events) runs unchanged. See
+        // `crate::agent::claude_agent` and `claude_harness_turn::run_claude_harness_turn`.
+        //
+        // ⚠️ UNVERIFIED against a live harness/subscription — see the module
+        // doc on `claude_harness_turn` for tracked fidelity gaps.
+        let harness_base_url = self
+            .chat_state_handle
+            .get_sampling_config()
+            .await
+            .map(|c| c.base_url);
+        let result =
+            if crate::agent::claude_agent::should_use_claude_harness(harness_base_url.as_deref()) {
+                self.run_claude_harness_turn(&harness_prompt_text).await
+            } else {
+                let mut round_trace = trace_gcs_config;
+                let mut round_artifact = artifact_tracker;
+                loop {
+                    if self.goal_harness_enabled() {
+                        let goal_loop_active = self.goal_tracker.lock().status()
+                            == Some(crate::session::goal_tracker::GoalStatus::Active);
+                        self.set_goal_loop_active_resource(goal_loop_active).await;
                     }
-                    GoalRoundDecision::EndTurn => break round,
+                    let round = self
+                        .process_conversation_turn_with_recovery(
+                            prompt_id,
+                            round_trace.take(),
+                            round_artifact.take(),
+                            json_schema.clone(),
+                        )
+                        .await;
+                    if !matches!(round, Ok(TurnOutcome::Completed { .. })) {
+                        break round;
+                    }
+                    if matches!(round, Ok(TurnOutcome::Completed { refusal: true, .. })) {
+                        break round;
+                    }
+                    let goal_active = laziness_injection_active(
+                        self.goal_harness_enabled(),
+                        self.goal_tracker.lock().status(),
+                    );
+                    if !goal_active {
+                        break round;
+                    }
+                    match self.run_goal_round_end().await {
+                        GoalRoundDecision::Continue(directive) => {
+                            self.inject_goal_continuation_message(directive).await;
+                        }
+                        GoalRoundDecision::EndTurn => break round,
+                    }
                 }
-            }
-        };
+            };
         let turn_duration_ms = turn_timer.elapsed().as_millis() as u64;
         let handle_prompt_elapsed_ms = handle_prompt_start.elapsed().as_millis() as u64;
         xai_grok_telemetry::unified_log::info(
