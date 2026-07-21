@@ -18,9 +18,9 @@
 //! Sampling traffic uses process-wide shared clients owned by
 //! `xai_grok_sampler::shared_http` (one HTTP/2 pooled client plus
 //! a pool-less HTTP/1.1 fallback shared across every
-//! `SamplingClient`). The sampler reads `GROK_POOL_*` /
-//! `GROK_CONNECT_TIMEOUT_SECS` once, when its shared client is
-//! first built, and `GROK_SAMPLER_SHARED_CLIENT=0` falls back to
+//! `SamplingClient`). The sampler reads `ATLAS_POOL_*` /
+//! `ATLAS_CONNECT_TIMEOUT_SECS` once, when its shared client is
+//! first built, and `ATLAS_SAMPLER_SHARED_CLIENT=0` falls back to
 //! a fresh client per `SamplingClient`.
 //!
 //! TLS root certificates are warmed at process start via
@@ -64,15 +64,15 @@ static CLIENT_TYPE: OnceLock<ClientType> = OnceLock::new();
 // functions below.
 pub use xai_grok_sampler::OriginClientInfo;
 
-/// Construct an [`OriginClientInfo`] from `GROK_CLIENT_NAME` /
-/// `GROK_CLIENT_VERSION` env vars. Returns `None` when
-/// `GROK_CLIENT_NAME` is unset.
+/// Construct an [`OriginClientInfo`] from `ATLAS_CLIENT_NAME` /
+/// `ATLAS_CLIENT_VERSION` env vars. Returns `None` when
+/// `ATLAS_CLIENT_NAME` is unset.
 pub fn origin_client_info_from_env() -> Option<OriginClientInfo> {
-    std::env::var("GROK_CLIENT_NAME")
+    std::env::var("ATLAS_CLIENT_NAME")
         .ok()
         .map(|product| OriginClientInfo {
             product,
-            version: std::env::var("GROK_CLIENT_VERSION").ok(),
+            version: std::env::var("ATLAS_CLIENT_VERSION").ok(),
         })
 }
 
@@ -178,7 +178,7 @@ pub fn process_user_agent_string() -> String {
 
     UserAgent {
         origin,
-        agent_product: "grok-shell",
+        agent_product: "atlas-shell",
         agent_version,
         platform: PlatformInfo::current(),
     }
@@ -188,7 +188,7 @@ pub fn process_user_agent_string() -> String {
 pub fn session_user_agent_string(origin: &OriginClientInfo) -> String {
     UserAgent {
         origin: origin.clone(),
-        agent_product: "grok-shell",
+        agent_product: "atlas-shell",
         agent_version: agent_version(),
         platform: PlatformInfo::current(),
     }
@@ -236,9 +236,9 @@ pub fn client_type_from_origin(origin: Option<&OriginClientInfo>) -> ClientType 
     ClientType::from_client_identifier(origin.map(|o| o.product.as_str()))
 }
 
-/// Process-level client identifier (`GROK_CLIENT_NAME` env var, default `"grok-shell"`).
+/// Process-level client identifier (`ATLAS_CLIENT_NAME` env var, default `"atlas-shell"`).
 pub fn process_client_identifier() -> String {
-    std::env::var("GROK_CLIENT_NAME").unwrap_or_else(|_| "grok-shell".to_string())
+    std::env::var("ATLAS_CLIENT_NAME").unwrap_or_else(|_| "atlas-shell".to_string())
 }
 
 /// Header telling cli-chat-proxy whether this process is a single-prompt
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn origin_client_info_from_meta_extracts_identifier_and_version() {
         let meta = serde_json::json!({
-            "clientIdentifier": "grok-desktop",
+            "clientIdentifier": "atlas-desktop",
             "clientVersion": "1.2.3",
         })
         .as_object()
@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(
             origin_client_info_from_meta(Some(&meta)),
             Some(OriginClientInfo {
-                product: "grok-desktop".to_string(),
+                product: "atlas-desktop".to_string(),
                 version: Some("1.2.3".to_string()),
             })
         );
@@ -572,7 +572,7 @@ mod tests {
         assert_eq!(
             origin_client_info_from_meta(Some(&meta)),
             Some(OriginClientInfo {
-                product: "grok-pager".to_string(),
+                product: "atlas-pager".to_string(),
                 version: Some("0.1.2".to_string()),
             })
         );
@@ -582,18 +582,18 @@ mod tests {
     fn merge_origin_client_info_preserves_primary_product_and_backfills_version() {
         let merged = merge_origin_client_info(
             Some(OriginClientInfo {
-                product: "grok-web".to_string(),
+                product: "atlas-web".to_string(),
                 version: None,
             }),
             Some(OriginClientInfo {
-                product: "grok-desktop".to_string(),
+                product: "atlas-desktop".to_string(),
                 version: Some("1.2.3".to_string()),
             }),
         );
         assert_eq!(
             merged,
             Some(OriginClientInfo {
-                product: "grok-web".to_string(),
+                product: "atlas-web".to_string(),
                 version: Some("1.2.3".to_string()),
             })
         );
@@ -602,28 +602,28 @@ mod tests {
     #[test]
     fn session_user_agent_string_renders_expected_variants() {
         let with_version = session_user_agent_string(&OriginClientInfo {
-            product: "grok-desktop".to_string(),
+            product: "atlas-desktop".to_string(),
             version: Some("1.2.3".to_string()),
         });
-        assert!(with_version.starts_with("grok-desktop/1.2.3 grok-shell/"));
+        assert!(with_version.starts_with("atlas-desktop/1.2.3 atlas-shell/"));
         assert!(with_version.contains(" ("));
 
         let without_version = session_user_agent_string(&OriginClientInfo {
-            product: "grok-web".to_string(),
+            product: "atlas-web".to_string(),
             version: None,
         });
-        assert!(without_version.starts_with("grok-web grok-shell/"));
-        assert!(!without_version.starts_with("grok-web/"));
+        assert!(without_version.starts_with("atlas-web atlas-shell/"));
+        assert!(!without_version.starts_with("atlas-web/"));
     }
 
     #[test]
     fn user_agent_render_collapses_duplicate_origin_and_agent_identity() {
         let ua = UserAgent {
             origin: OriginClientInfo {
-                product: "grok-shell".to_string(),
+                product: "atlas-shell".to_string(),
                 version: Some("0.1.171".to_string()),
             },
-            agent_product: "grok-shell",
+            agent_product: "atlas-shell",
             agent_version: "0.1.171".to_string(),
             platform: PlatformInfo {
                 os: "macos".to_string(),
@@ -631,6 +631,6 @@ mod tests {
             },
         };
 
-        assert_eq!(ua.render(), "grok-shell/0.1.171 (macos; aarch64)");
+        assert_eq!(ua.render(), "atlas-shell/0.1.171 (macos; aarch64)");
     }
 }
