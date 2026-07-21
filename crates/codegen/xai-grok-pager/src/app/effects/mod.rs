@@ -4079,7 +4079,7 @@ pub(crate) fn execute(
                                 &scope,
                             )?;
                             let proxy_base = std::env::var(
-                                    "GROK_CLI_CHAT_PROXY_BASE_URL",
+                                    "ATLAS_CLI_CHAT_PROXY_BASE_URL",
                                 )
                                 .unwrap_or_else(|_| {
                                     xai_grok_shell::agent::config::CLI_CHAT_PROXY_BASE_URL_DEFAULT

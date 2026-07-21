@@ -14,13 +14,13 @@ fn execute_hook(
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
         .arg(command)
-        .env("GROK_EVENT", event_str)
-        .env("GROK_MESSAGE", message)
+        .env("ATLAS_EVENT", event_str)
+        .env("ATLAS_MESSAGE", message)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     if let Some(sid) = session_id {
-        cmd.env("GROK_SESSION_ID", sid);
+        cmd.env("ATLAS_SESSION_ID", sid);
     }
 
     // Create a new process group so we can kill the entire tree on timeout,
@@ -105,8 +105,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("env.txt");
         let command = format!(
-            "printf 'GROK_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
-             \"$GROK_EVENT\" \"$GROK_MESSAGE\" \"$GROK_SESSION_ID\" > {}",
+            "printf 'ATLAS_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
+             \"$ATLAS_EVENT\" \"$ATLAS_MESSAGE\" \"$ATLAS_SESSION_ID\" > {}",
             out.display()
         );
 
@@ -120,16 +120,16 @@ mod tests {
 
         let content = std::fs::read_to_string(&out).unwrap();
         assert!(
-            content.contains("GROK_EVENT=Turn complete"),
-            "missing GROK_EVENT: {content}"
+            content.contains("ATLAS_EVENT=Turn complete"),
+            "missing ATLAS_EVENT: {content}"
         );
         assert!(
-            content.contains("GROK_MESSAGE=hello world"),
-            "missing GROK_MESSAGE: {content}"
+            content.contains("ATLAS_MESSAGE=hello world"),
+            "missing ATLAS_MESSAGE: {content}"
         );
         assert!(
-            content.contains("GROK_SESSION_ID=sess-42"),
-            "missing GROK_SESSION_ID: {content}"
+            content.contains("ATLAS_SESSION_ID=sess-42"),
+            "missing ATLAS_SESSION_ID: {content}"
         );
     }
 
@@ -149,8 +149,8 @@ mod tests {
 
         let content = std::fs::read_to_string(&out).unwrap();
         assert!(
-            !content.contains("GROK_SESSION_ID"),
-            "GROK_SESSION_ID should not be set: {content}"
+            !content.contains("ATLAS_SESSION_ID"),
+            "ATLAS_SESSION_ID should not be set: {content}"
         );
     }
 
@@ -257,8 +257,8 @@ mod tests {
         let out = dir.path().join("env.txt");
         let hook = NotificationHook {
             command: format!(
-                "printf 'GROK_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
-                 \"$GROK_EVENT\" \"$GROK_MESSAGE\" \"$GROK_SESSION_ID\" > {}",
+                "printf 'ATLAS_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
+                 \"$ATLAS_EVENT\" \"$ATLAS_MESSAGE\" \"$ATLAS_SESSION_ID\" > {}",
                 out.display()
             ),
             events: vec![],
@@ -281,8 +281,8 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(50));
         };
-        assert!(content.contains("GROK_EVENT=Turn complete"));
-        assert!(content.contains("GROK_MESSAGE=test body payload"));
-        assert!(content.contains("GROK_SESSION_ID=test-session-123"));
+        assert!(content.contains("ATLAS_EVENT=Turn complete"));
+        assert!(content.contains("ATLAS_MESSAGE=test body payload"));
+        assert!(content.contains("ATLAS_SESSION_ID=test-session-123"));
     }
 }

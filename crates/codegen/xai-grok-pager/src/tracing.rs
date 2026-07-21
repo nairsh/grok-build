@@ -277,7 +277,7 @@ impl TracingModel {
 /// retention in the log channel was the 50-60GB OOM class. Payload fields on
 /// this target must be wrapped in [`LazyJson`] so serialization only happens
 /// inside a recording subscriber: the dev pane filter (dev builds) or the
-/// firehose (`GROK_DEBUG_LOG` / `GROK_LOG_FILE`).
+/// firehose (`ATLAS_DEBUG_LOG` / `ATLAS_LOG_FILE`).
 pub use xai_grok_telemetry::debug_log::ACP_UPDATE_PAYLOAD_TARGET;
 /// Target for the always-on compact ACP update summary line (kind, ids,
 /// status, payload sizes). Cheap to format at streaming rate.

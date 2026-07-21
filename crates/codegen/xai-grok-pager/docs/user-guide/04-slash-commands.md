@@ -243,7 +243,7 @@ Open the current saved plan preview. Aliases: `/show-plan`, `/plan-view`.
 
 ## Memory
 
-The `/flush`, `/dream`, and `/memory` commands require `--experimental-memory` or `GROK_MEMORY=1`. `/remember` is always available.
+The `/flush`, `/dream`, and `/memory` commands require `--experimental-memory` or `ATLAS_MEMORY=1`. `/remember` is always available.
 
 ### `/memory`
 
@@ -542,7 +542,7 @@ Toggle message timestamps on or off.
 
 ## Skills as Slash Commands
 
-Any enabled skill with `user-invocable: true` in its SKILL.md frontmatter appears as a slash command. (A skill turned off via `/skills` is not advertised.) For example, if you have a skill at `~/.grok/skills/commit/SKILL.md`, you can invoke it with:
+Any enabled skill with `user-invocable: true` in its SKILL.md frontmatter appears as a slash command. (A skill turned off via `/skills` is not advertised.) For example, if you have a skill at `~/.atlas/skills/commit/SKILL.md`, you can invoke it with:
 
 ```
 /commit fix typo in README

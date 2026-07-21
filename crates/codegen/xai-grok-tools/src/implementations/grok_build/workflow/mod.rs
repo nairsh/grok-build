@@ -39,8 +39,8 @@ use crate::types::tool::{ToolKind, ToolNamespace};
 pub const WORKFLOW_TOOL_NAME: &str = "workflow";
 pub const WORKFLOW_PREVIEW_TOOL_NAME: &str = "workflow_preview";
 pub const WORKFLOW_ACTION_TOOL_NAME: &str = "workflow_action";
-pub const EXPERIMENTAL_WORKFLOWS_ENV: &str = "GROK_EXPERIMENTAL_WORKFLOWS";
-pub const ULTRACODE_ENV: &str = "GROK_ULTRACODE";
+pub const EXPERIMENTAL_WORKFLOWS_ENV: &str = "ATLAS_EXPERIMENTAL_WORKFLOWS";
+pub const ULTRACODE_ENV: &str = "ATLAS_ULTRACODE";
 
 const MAX_SCRIPT_BYTES: usize = 128 * 1024;
 const MAX_ARGS_BYTES: usize = 64 * 1024;
@@ -109,8 +109,8 @@ pub struct WorkflowInput {
     /// and return a JSON-serializable value.
     #[serde(default)]
     pub script: String,
-    /// Saved workflow name. Project `.grok/workflows` takes precedence over
-    /// the user's `~/.grok/workflows` directory.
+    /// Saved workflow name. Project `.atlas/workflows` takes precedence over
+    /// the user's `~/.atlas/workflows` directory.
     #[serde(default)]
     pub saved_workflow: Option<String>,
     /// Immutable JSON exposed to the script as `args`.
@@ -1653,9 +1653,9 @@ pub(crate) fn resolve_workflow_source(
         );
     }
     let filename = format!("{name}.js");
-    let project_path = cwd.join(".grok").join("workflows").join(&filename);
+    let project_path = cwd.join(".atlas").join("workflows").join(&filename);
     let user_path =
-        dirs::home_dir().map(|home| home.join(".grok").join("workflows").join(&filename));
+        dirs::home_dir().map(|home| home.join(".atlas").join("workflows").join(&filename));
     let path = if project_path.is_file() {
         project_path
     } else if user_path.as_ref().is_some_and(|path| path.is_file()) {

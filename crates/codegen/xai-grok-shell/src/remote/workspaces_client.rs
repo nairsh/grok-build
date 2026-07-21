@@ -63,9 +63,9 @@ pub struct WorkspacesClient {
 impl WorkspacesClient {
     pub fn new(auth: Arc<AuthManager>) -> Self {
         let base_url = first_nonempty_env(&[
-            "GROK_WORKSPACES_BASE_URL",
-            "GROK_CONVERSATIONS_BASE_URL",
-            "GROK_CODE_WEB_URL",
+            "ATLAS_WORKSPACES_BASE_URL",
+            "ATLAS_CONVERSATIONS_BASE_URL",
+            "ATLAS_CODE_WEB_URL",
         ])
         .unwrap_or_else(|| GROK_WEB_URL.to_string());
         Self {

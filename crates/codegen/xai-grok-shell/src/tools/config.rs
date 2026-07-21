@@ -107,7 +107,7 @@ pub struct AskUserQuestionToolConfig {
 #[serde(default)]
 pub struct WebFetchToolConfig {
     /// Egress proxy endpoint. When set, all HTTP requests are routed through
-    /// this URL. Resolution: TOML > `GROK_WEB_FETCH_PROXY` env > remote settings > None.
+    /// this URL. Resolution: TOML > `ATLAS_WEB_FETCH_PROXY` env > remote settings > None.
     pub proxy_endpoint: Option<String>,
     /// Domains the tool is allowed to fetch. When set, overrides the built-in
     /// default allowlist. An explicit empty list blocks all fetches.
@@ -133,7 +133,7 @@ impl WebFetchToolConfig {
             .proxy_endpoint
             .as_ref()
             .cloned()
-            .or_else(|| env_string("GROK_WEB_FETCH_PROXY"))
+            .or_else(|| env_string("ATLAS_WEB_FETCH_PROXY"))
             .or_else(|| remote_proxy.map(|s| s.to_owned()));
 
         let allowed_domains = self

@@ -653,9 +653,9 @@ async fn upload_harness_trace_turns_build_per_turn_manifest() {
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_defaults_to_grok_build() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let def = MvpAgent::resolve_agent_definition(
@@ -667,7 +667,7 @@ fn resolve_agent_definition_defaults_to_grok_build() {
     );
     assert_eq!(def.name, config::DEFAULT_AGENT_TYPE);
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// When model_agent_type = Some("codex"), the codex agent is selected even
@@ -675,9 +675,9 @@ fn resolve_agent_definition_defaults_to_grok_build() {
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_model_agent_type_overrides_default() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let def = MvpAgent::resolve_agent_definition(
@@ -689,7 +689,7 @@ fn resolve_agent_definition_model_agent_type_overrides_default() {
     );
     assert_eq!(def.name, "codex");
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// When model_agent_type is None, the chain-resolved default agent is
@@ -699,9 +699,9 @@ fn resolve_agent_definition_model_agent_type_overrides_default() {
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_none_agent_type_does_not_override() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let def = MvpAgent::resolve_agent_definition(
@@ -713,7 +713,7 @@ fn resolve_agent_definition_none_agent_type_does_not_override() {
     );
     assert_eq!(def.name, config::DEFAULT_AGENT_TYPE);
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// Regression for the web-client devbox bug: an ACP profile must
@@ -721,9 +721,9 @@ fn resolve_agent_definition_none_agent_type_does_not_override() {
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_acp_profile_wins_when_model_agent_type_is_default() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let acp_profile = xai_grok_agent::AgentDefinition::from_json(&serde_json::json!(
@@ -744,7 +744,7 @@ fn resolve_agent_definition_acp_profile_wins_when_model_agent_type_is_default() 
         "ACP _meta.agentProfile must win when model_agent_type is the default value"
     );
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// Regression: after `DEFAULT_AGENT_TYPE` flipped to
@@ -755,9 +755,9 @@ fn resolve_agent_definition_acp_profile_wins_when_model_agent_type_is_default() 
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_acp_profile_wins_for_explicit_grok_build_family() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let acp_profile = xai_grok_agent::AgentDefinition::from_json(&serde_json::json!(
@@ -779,7 +779,7 @@ fn resolve_agent_definition_acp_profile_wins_for_explicit_grok_build_family() {
         );
     }
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// A non-strict (stock / vision-capable) model leaves the template alone, so
@@ -811,9 +811,9 @@ fn inherited_harness_template_respects_explicit_template() {
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_cli_agent_profile_wins_when_model_agent_type_is_default() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
     let profile_path = tmp.path().join("cli-profile.md");
@@ -831,19 +831,19 @@ fn resolve_agent_definition_cli_agent_profile_wins_when_model_agent_type_is_defa
     );
     assert_eq!(def.name, "cli-profile");
     if let Some(v) = prev {
-        unsafe { std::env::set_var("GROK_AGENT", v) }
+        unsafe { std::env::set_var("ATLAS_AGENT", v) }
     }
 }
 /// Agent profile with `model: Override(id)` preserves the field through resolution.
 #[test]
 #[serial_test::serial]
 fn resolve_agent_definition_agent_profile_with_model_override() {
-    let prev = std::env::var("GROK_AGENT").ok();
+    let prev = std::env::var("ATLAS_AGENT").ok();
     unsafe {
-        std::env::remove_var("GROK_AGENT");
+        std::env::remove_var("ATLAS_AGENT");
     }
     let tmp = tempfile::tempdir().unwrap();
-    let agents_dir = tmp.path().join(".grok").join("agents");
+    let agents_dir = tmp.path().join(".atlas").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
             agents_dir.join("test-architect.md"),
@@ -863,8 +863,8 @@ fn resolve_agent_definition_agent_profile_with_model_override() {
         "agent profile model override must be preserved through resolution"
     );
     match prev {
-        Some(v) => unsafe { std::env::set_var("GROK_AGENT", v) },
-        None => unsafe { std::env::remove_var("GROK_AGENT") },
+        Some(v) => unsafe { std::env::set_var("ATLAS_AGENT", v) },
+        None => unsafe { std::env::remove_var("ATLAS_AGENT") },
     }
 }
 #[test]
@@ -1637,7 +1637,7 @@ async fn ensure_plugin_registry_lazily_populates_snapshot() {
     use crate::auth::{AuthManager, GrokComConfig};
     use xai_grok_test_support::EnvGuard;
     let grok_home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", grok_home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", grok_home.path());
     let plugin_dir = tempfile::tempdir().unwrap();
     std::fs::write(
         plugin_dir.path().join("plugin.json"),
@@ -2380,7 +2380,7 @@ fn build_agent_with_api_key_auth_disabled() -> MvpAgent {
 async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
     use crate::agent::auth_method::{XAI_API_KEY_ENV_VAR, XAI_API_KEY_METHOD_ID};
     use xai_grok_test_support::EnvGuard;
-    let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
+    let _lockdown = EnvGuard::unset("ATLAS_DISABLE_API_KEY_AUTH");
     let _key = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-deployment-key");
     let agent = build_minimal_agent_for_tests();
     assert_eq!(
@@ -2401,7 +2401,7 @@ async fn cached_token_fallthrough_prefers_api_key_for_deployment_key() {
 async fn cached_token_fallthrough_respects_kill_switch() {
     use crate::agent::auth_method::{GROK_COM_METHOD_ID, XAI_API_KEY_ENV_VAR};
     use xai_grok_test_support::EnvGuard;
-    let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
+    let _lockdown = EnvGuard::unset("ATLAS_DISABLE_API_KEY_AUTH");
     let _key = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-deployment-key");
     let agent = build_agent_with_api_key_auth_disabled();
     assert_eq!(
@@ -2423,7 +2423,7 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
         GROK_COM_METHOD_ID, LEGACY_XAI_API_KEY_ENV_VAR, XAI_API_KEY_ENV_VAR,
     };
     use xai_grok_test_support::EnvGuard;
-    let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
+    let _lockdown = EnvGuard::unset("ATLAS_DISABLE_API_KEY_AUTH");
     let _new = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
     let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
     let agent = build_minimal_agent_for_tests();
@@ -2961,7 +2961,7 @@ async fn remove_session_releases_workspace_binding_and_side_maps() {
 #[test]
 fn ext_method_rewind_uses_local_dispatch_without_bridge() {
     use acp::Agent as _;
-    let _env = crate::env::EnvVarGuard::remove(crate::env::GROK_DISABLE_CUSTOM_BRIDGE_ENV);
+    let _env = crate::env::EnvVarGuard::remove(crate::env::ATLAS_DISABLE_CUSTOM_BRIDGE_ENV);
     run_local_for_bridge_test(|| async {
         let agent = build_minimal_agent_for_tests();
         let params = serde_json::json!({ "sessionId" : "sess-local" });
@@ -3623,9 +3623,9 @@ fn interactive_trust_prompt_grant_reloads_project_mcp() {
     use xai_grok_test_support::EnvGuard;
     use xai_grok_workspace::trust::{TrustStore, workspace_key};
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();
@@ -3702,9 +3702,9 @@ fn interactive_trust_prompt_reject_keeps_gated() {
     use xai_grok_test_support::EnvGuard;
     use xai_grok_workspace::trust::{TrustStore, workspace_key};
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();
@@ -3739,9 +3739,9 @@ fn interactive_trust_prompt_reject_keeps_gated() {
 fn interactive_trust_prompt_dormant_when_feature_off() {
     use xai_grok_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = crate::util::config::RemoteSettings {
@@ -3769,9 +3769,9 @@ fn interactive_trust_prompt_dormant_when_feature_off() {
 fn interactive_trust_prompt_no_request_without_capability() {
     use xai_grok_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();
@@ -3797,9 +3797,9 @@ fn interactive_trust_prompt_client_error_fails_closed() {
     use xai_grok_test_support::EnvGuard;
     use xai_grok_workspace::trust::{TrustStore, workspace_key};
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();
@@ -3838,9 +3838,9 @@ fn interactive_trust_prompt_client_error_fails_closed() {
 fn interactive_trust_prompt_dedups_same_workspace() {
     use xai_grok_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();
@@ -3913,9 +3913,9 @@ async fn drain_reload_commands(
 fn interactive_trust_prompt_reloads_all_same_workspace_sessions() {
     use xai_grok_test_support::EnvGuard;
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let root = repo.path().to_path_buf();
     let subdir = root.join("sub");
@@ -3978,9 +3978,9 @@ fn interactive_trust_prompt_reprompts_after_untrust() {
     use xai_grok_test_support::EnvGuard;
     use xai_hooks_plugins_types::HooksAction;
     let home = tempfile::tempdir().unwrap();
-    let _env = EnvGuard::set("GROK_HOME", home.path());
+    let _env = EnvGuard::set("ATLAS_HOME", home.path());
     let _sim = EnvGuard::set(xai_grok_version::TEST_VERSION_ENV, "0.0-sim");
-    let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
+    let _flag = EnvGuard::unset("ATLAS_FOLDER_TRUST");
     let repo = repo_with_project_mcp_server();
     let repo_path = repo.path().to_path_buf();
     let remote = folder_trust_on();

@@ -9,7 +9,7 @@
 //! concrete realization of "a provider is not an account" and the deliberate
 //! step beyond Pi, which keys auth by provider name.
 //!
-//! Stored at `~/.grok/credentials.json` (0600), alongside — but separate from —
+//! Stored at `~/.atlas/credentials.json` (0600), alongside — but separate from —
 //! the xAI-specific `auth.json`, so the intricate `AuthManager`/OIDC machinery
 //! is left untouched.
 
@@ -57,7 +57,7 @@ pub struct CredentialStore {
 }
 
 impl CredentialStore {
-    /// Default path: `~/.grok/credentials.json`.
+    /// Default path: `~/.atlas/credentials.json`.
     pub fn default_path() -> PathBuf {
         xai_grok_config::grok_home().join("credentials.json")
     }

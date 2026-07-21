@@ -66,7 +66,7 @@ impl ContentController {
         self.server.url()
     }
 
-    /// Isolated `$HOME` directory that the pager should use (keeps its ~/.grok
+    /// Isolated `$HOME` directory that the pager should use (keeps its ~/.atlas
     /// cache/state out of the real home during tests).
     pub fn home(&self) -> &Path {
         self.home.path()
@@ -81,27 +81,27 @@ impl ContentController {
         let grok_home = self
             .home
             .path()
-            .join(".grok")
+            .join(".atlas")
             .to_string_lossy()
             .into_owned();
         vec![
             ("HOME".into(), home),
-            // Explicit GROK_HOME prevents leaking the real user's
+            // Explicit ATLAS_HOME prevents leaking the real user's
             // config.toml when $HOME alone isn't sufficient (e.g. if
-            // GROK_HOME is set in the test runner's env).
-            ("GROK_HOME".into(), grok_home),
-            ("GROK_CLI_CHAT_PROXY_BASE_URL".into(), self.url()),
-            ("GROK_XAI_API_BASE_URL".into(), self.url()),
+            // ATLAS_HOME is set in the test runner's env).
+            ("ATLAS_HOME".into(), grok_home),
+            ("ATLAS_CLI_CHAT_PROXY_BASE_URL".into(), self.url()),
+            ("ATLAS_XAI_API_BASE_URL".into(), self.url()),
             ("XAI_API_KEY".into(), "test-key-for-ci".into()),
-            ("GROK_TELEMETRY_ENABLED".into(), "false".into()),
-            ("GROK_FEEDBACK_ENABLED".into(), "false".into()),
-            ("GROK_TRACE_UPLOAD".into(), "false".into()),
+            ("ATLAS_TELEMETRY_ENABLED".into(), "false".into()),
+            ("ATLAS_FEEDBACK_ENABLED".into(), "false".into()),
+            ("ATLAS_TRACE_UPLOAD".into(), "false".into()),
             // Next-prompt autocomplete fires an extra background model call
             // at every turn end (default ON). Off by default in PTY tests so
             // the mock's fixed response can't leak in as ghost text and
             // scripted per-path FIFOs aren't consumed by it. Tests exercising
             // the feature re-enable it via extra env.
-            ("GROK_PROMPT_SUGGESTIONS".into(), "false".into()),
+            ("ATLAS_PROMPT_SUGGESTIONS".into(), "false".into()),
             // No inference retries in tests. The mock always answers 200, so a
             // retry only ever fires when a turn is deliberately stalled
             // (`hold_agent_completions` / a long `chunk_delay`). On a slow
@@ -111,7 +111,7 @@ impl ContentController {
             // turn's slot, misaligning every following turn (the promoted queue
             // prompt then hangs waiting for a response that was already popped).
             // Pinning retries to 0 keeps one request == one turn.
-            ("GROK_MAX_RETRIES".into(), "0".into()),
+            ("ATLAS_MAX_RETRIES".into(), "0".into()),
         ]
     }
 
@@ -275,17 +275,17 @@ mod tests {
 
         assert_eq!(get("HOME").as_deref(), content.home().to_str());
         assert_eq!(
-            get("GROK_HOME").as_deref(),
-            content.home().join(".grok").to_str()
+            get("ATLAS_HOME").as_deref(),
+            content.home().join(".atlas").to_str()
         );
-        assert_eq!(get("GROK_CLI_CHAT_PROXY_BASE_URL"), Some(content.url()));
-        assert_eq!(get("GROK_XAI_API_BASE_URL"), Some(content.url()));
+        assert_eq!(get("ATLAS_CLI_CHAT_PROXY_BASE_URL"), Some(content.url()));
+        assert_eq!(get("ATLAS_XAI_API_BASE_URL"), Some(content.url()));
         assert_eq!(get("XAI_API_KEY").as_deref(), Some("test-key-for-ci"));
-        assert_eq!(get("GROK_TELEMETRY_ENABLED").as_deref(), Some("false"));
-        assert_eq!(get("GROK_FEEDBACK_ENABLED").as_deref(), Some("false"));
-        assert_eq!(get("GROK_TRACE_UPLOAD").as_deref(), Some("false"));
-        assert_eq!(get("GROK_PROMPT_SUGGESTIONS").as_deref(), Some("false"));
-        assert_eq!(get("GROK_MAX_RETRIES").as_deref(), Some("0"));
+        assert_eq!(get("ATLAS_TELEMETRY_ENABLED").as_deref(), Some("false"));
+        assert_eq!(get("ATLAS_FEEDBACK_ENABLED").as_deref(), Some("false"));
+        assert_eq!(get("ATLAS_TRACE_UPLOAD").as_deref(), Some("false"));
+        assert_eq!(get("ATLAS_PROMPT_SUGGESTIONS").as_deref(), Some("false"));
+        assert_eq!(get("ATLAS_MAX_RETRIES").as_deref(), Some("0"));
         assert_eq!(env.len(), 10, "env list must not silently grow or shrink");
     }
 }

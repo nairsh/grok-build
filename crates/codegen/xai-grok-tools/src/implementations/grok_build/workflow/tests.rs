@@ -1265,7 +1265,7 @@ fn approval_hash_binds_arguments_and_limits() {
 #[test]
 fn saved_workflow_resolves_from_project_and_rejects_traversal() {
     let temp = tempfile::tempdir().unwrap();
-    let workflows = temp.path().join(".grok/workflows");
+    let workflows = temp.path().join(".atlas/workflows");
     fs::create_dir_all(&workflows).unwrap();
     let source = "export const meta = { name: \"saved\", description: \"saved\" }; return 1;";
     fs::write(workflows.join("audit.js"), source).unwrap();

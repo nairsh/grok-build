@@ -1,6 +1,6 @@
 //! Standalone workspace ToolServer for remote sandboxes.
 //!
-//! Reads OIDC credentials from `~/.grok/auth.json`, connects to a
+//! Reads OIDC credentials from `~/.atlas/auth.json`, connects to a
 //! server, exposes workspace tools, and refreshes tokens
 //! automatically.
 use clap::Parser;
@@ -68,11 +68,11 @@ struct Args {
     /// `gcs::upload_bytes` path.
     ///
     /// Enabled by default. Pass `--upload-queue-enabled false` (or set the
-    /// `GROK_WORKSPACE_UPLOAD_QUEUE_ENABLED` env var to `false`) to fall back to
+    /// `ATLAS_WORKSPACE_UPLOAD_QUEUE_ENABLED` env var to `false`) to fall back to
     /// the legacy inline path. Accepts `true`/`false`.
     #[arg(
         long,
-        env = "GROK_WORKSPACE_UPLOAD_QUEUE_ENABLED",
+        env = "ATLAS_WORKSPACE_UPLOAD_QUEUE_ENABLED",
         default_value_t = true,
         action = clap::ArgAction::Set,
     )]
@@ -84,10 +84,10 @@ struct Args {
     /// Confine `x.ai/fs/*` resolution to the workspace root (reject `..`,
     /// absolute-outside-root, symlink escapes). On by default: the standalone
     /// server always backs a remote-sandbox workspace, a real tenant boundary.
-    /// Override with `GROK_WORKSPACE_CONFINE_FS_TO_ROOT=false` (e.g. local dev).
+    /// Override with `ATLAS_WORKSPACE_CONFINE_FS_TO_ROOT=false` (e.g. local dev).
     #[arg(
         long,
-        env = "GROK_WORKSPACE_CONFINE_FS_TO_ROOT",
+        env = "ATLAS_WORKSPACE_CONFINE_FS_TO_ROOT",
         default_value_t = true,
         action = clap::ArgAction::Set,
     )]
@@ -217,7 +217,7 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .with(donating.clone())
         .init();
-    let direct_otlp = match std::env::var("GROK_WORKSPACE_OTLP_ENDPOINT") {
+    let direct_otlp = match std::env::var("ATLAS_WORKSPACE_OTLP_ENDPOINT") {
         Ok(endpoint) if !endpoint.is_empty() => {
             match xai_tracing::init_fastrace(endpoint.clone(), SERVICE_NAME.to_owned(), None) {
                 Ok(()) => {
@@ -235,7 +235,7 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
     let url = Url::parse(&args.hub_url).map_err(|e| anyhow::anyhow!("invalid --hub-url: {e}"))?;
     {
         use xai_grok_sandbox::{ProfileName, SandboxManager};
-        let profile = match std::env::var("GROK_SANDBOX_PROFILE").ok() {
+        let profile = match std::env::var("ATLAS_SANDBOX_PROFILE").ok() {
             Some(val) => {
                 let parsed = val
                     .parse::<ProfileName>()
@@ -243,7 +243,7 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
                 if matches!(parsed, ProfileName::Custom(_)) {
                     tracing::warn!(
                         value = % val,
-                        "Unrecognized GROK_SANDBOX_PROFILE, defaulting to workspace"
+                        "Unrecognized ATLAS_SANDBOX_PROFILE, defaulting to workspace"
                     );
                     ProfileName::Workspace
                 } else {
@@ -257,7 +257,7 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
         if profile == ProfileName::Off {
             tracing::info!(
                 profile = % profile_name,
-                "Sandbox explicitly disabled via GROK_SANDBOX_PROFILE=off"
+                "Sandbox explicitly disabled via ATLAS_SANDBOX_PROFILE=off"
             );
         } else {
             let mut sandbox = SandboxManager::new(profile, &cwd);
@@ -284,7 +284,7 @@ async fn run(args: Args, cwd: PathBuf) -> anyhow::Result<()> {
     let auth_provider = xai_grok_workspace::hub_auth::provider(&url, args.auth_config.as_deref())?;
     tracing::info!(hub_url = % url, cwd = % cwd.display(), "Starting workspace server");
     let cwd_display = cwd.display().to_string();
-    let session_id = std::env::var("GROK_SESSION_ID").ok();
+    let session_id = std::env::var("ATLAS_SESSION_ID").ok();
     let parsed_metadata = match args.metadata {
         Some(json_str) => Some(
             serde_json::from_str(&json_str)

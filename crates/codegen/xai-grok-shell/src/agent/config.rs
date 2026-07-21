@@ -152,46 +152,46 @@ pub struct EndpointsConfig {
     /// non-production feature, and only for matching first-party hosts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alpha_test_key: Option<String>,
-    /// Env: `GROK_MODELS_BASE_URL`. Enables custom endpoint mode.
+    /// Env: `ATLAS_MODELS_BASE_URL`. Enables custom endpoint mode.
     /// List URL defaults to `{models_base_url}/models`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub models_base_url: Option<String>,
-    /// Env: `GROK_MODELS_LIST_URL`. Overrides the default `{base}/models` list URL.
+    /// Env: `ATLAS_MODELS_LIST_URL`. Overrides the default `{base}/models` list URL.
     #[serde(alias = "models_endpoint", skip_serializing_if = "Option::is_none")]
     pub models_list_url: Option<String>,
-    /// Env: `GROK_FEEDBACK_BASE_URL`. Where feedback submissions go.
+    /// Env: `ATLAS_FEEDBACK_BASE_URL`. Where feedback submissions go.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feedback_base_url: Option<String>,
-    /// Env: `GROK_TRACE_UPLOAD_URL`. Where trace uploads go.
+    /// Env: `ATLAS_TRACE_UPLOAD_URL`. Where trace uploads go.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_url: Option<String>,
-    /// Env: `GROK_TRACE_UPLOAD_BUCKET`. Direct bucket (`gs://` or `s3://`), bypasses proxy.
+    /// Env: `ATLAS_TRACE_UPLOAD_BUCKET`. Direct bucket (`gs://` or `s3://`), bypasses proxy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_bucket: Option<String>,
-    /// Env: `GROK_TRACE_UPLOAD_REGION`. AWS region (S3 only).
+    /// Env: `ATLAS_TRACE_UPLOAD_REGION`. AWS region (S3 only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_region: Option<String>,
-    /// Env: `GROK_TRACE_UPLOAD_CREDENTIALS_FILE`. Path to GCS SA key or AWS credentials file.
+    /// Env: `ATLAS_TRACE_UPLOAD_CREDENTIALS_FILE`. Path to GCS SA key or AWS credentials file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_credentials_file: Option<String>,
     /// Inline credentials (JSON/INI). Takes precedence over `credentials_file`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_credentials: Option<String>,
-    /// Env: `GROK_TRACE_UPLOAD_ENDPOINT_URL`. Custom S3-compatible endpoint.
+    /// Env: `ATLAS_TRACE_UPLOAD_ENDPOINT_URL`. Custom S3-compatible endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_upload_endpoint_url: Option<String>,
-    /// Env: `GROK_DEPLOYMENT_KEY`. Management API key for enterprise deployments.
+    /// Env: `ATLAS_DEPLOYMENT_KEY`. Management API key for enterprise deployments.
     /// Sent on telemetry and service requests for deployment-level attribution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deployment_key: Option<String>,
-    /// Env: `GROK_MANAGED_CONFIG_URL`. Override the managed config endpoint.
+    /// Env: `ATLAS_MANAGED_CONFIG_URL`. Override the managed config endpoint.
     /// Defaults to `{proxy_url()}/deployment/config`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub managed_config_url: Option<String>,
     /// Env: `OTEL_EXPORTER_OTLP_ENDPOINT`. OTLP collector base; `/v1/traces` is
     /// appended. Legacy repoint of the INTERNAL trace pipeline — deprecated in
-    /// favor of `GROK_INTERNAL_OTLP_TRACES_ENDPOINT`, and ignored by the internal
-    /// pipeline when `GROK_EXTERNAL_OTEL` is set (the standard `OTEL_*` vars then
+    /// favor of `ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT`, and ignored by the internal
+    /// pipeline when `ATLAS_EXTERNAL_OTEL` is set (the standard `OTEL_*` vars then
     /// route the external stream only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub otel_exporter_otlp_endpoint: Option<String>,
@@ -204,19 +204,19 @@ pub struct EndpointsConfig {
     /// Same legacy/deprecation semantics as `otel_exporter_otlp_endpoint`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub otel_exporter_otlp_headers: Option<String>,
-    /// Env: `GROK_INTERNAL_OTLP_TRACES_ENDPOINT`. Full INTERNAL traces endpoint,
+    /// Env: `ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT`. Full INTERNAL traces endpoint,
     /// used verbatim. Dev/debug repoint of the internal span firehose (replaces
     /// the legacy `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` behavior; used by
     /// local-ic-testing / internal dev flows). Wins over the legacy `OTEL_*` vars.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grok_internal_otlp_traces_endpoint: Option<String>,
-    /// Env: `GROK_INTERNAL_OTLP_HEADERS`. `k=v,k2=v2` extra headers for the
+    /// Env: `ATLAS_INTERNAL_OTLP_HEADERS`. `k=v,k2=v2` extra headers for the
     /// internal export (debug). Wins over the legacy `OTEL_EXPORTER_OTLP_HEADERS`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grok_internal_otlp_headers: Option<String>,
     /// External-OTEL master switch, captured at construction via
     /// [`external_otel_master_switch_resolved`] — the same layered resolution
-    /// (requirement pin > `GROK_EXTERNAL_OTEL` env > `[telemetry].otel_enabled`
+    /// (requirement pin > `ATLAS_EXTERNAL_OTEL` env > `[telemetry].otel_enabled`
     /// config, managed layers included) that activates the external stream.
     /// When set, the standard `OTEL_EXPORTER_OTLP_*` vars are reserved for the
     /// external OTEL stream and the internal trace pipeline ignores them
@@ -237,7 +237,7 @@ pub struct EndpointsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub otel_exporter_otlp_timeout: Option<u64>,
     /// Base URL for the asset server (profile images, etc.).
-    /// Env: `GROK_ASSET_SERVER_URL`.
+    /// Env: `ATLAS_ASSET_SERVER_URL`.
     #[serde(default = "default_asset_server_url")]
     pub asset_server_url: String,
     /// Read by `load_management_api_key_sync()`. Declared for `serde_ignored`.
@@ -248,7 +248,7 @@ pub struct EndpointsConfig {
     pub gcs_service_account_key: Option<String>,
 }
 pub(crate) fn default_asset_server_url() -> String {
-    std::env::var("GROK_ASSET_SERVER_URL").unwrap_or_else(|_| ASSET_SERVER_URL_DEFAULT.to_owned())
+    std::env::var("ATLAS_ASSET_SERVER_URL").unwrap_or_else(|_| ASSET_SERVER_URL_DEFAULT.to_owned())
 }
 /// A blank or whitespace-only override counts as unset. Single source of truth
 /// for the "empty value = not configured" rule shared by the endpoint resolvers.
@@ -258,7 +258,7 @@ fn blank_as_unset(opt: &Option<String>) -> Option<String> {
         .map(str::to_owned)
 }
 /// Parse a `k=v,k2=v2` OTLP header list (the `OTEL_EXPORTER_OTLP_HEADERS`
-/// format, shared with `GROK_INTERNAL_OTLP_HEADERS`): split on `,`,
+/// format, shared with `ATLAS_INTERNAL_OTLP_HEADERS`): split on `,`,
 /// `split_once('=')`, trim key/value, skip blank keys, keep empty values.
 fn parse_otlp_header_list(raw: &str) -> Vec<(String, String)> {
     raw.split(',')
@@ -355,7 +355,7 @@ impl EndpointsConfig {
             tracing::warn!(
                 "Repointing the internal trace pipeline via OTEL_EXPORTER_OTLP_ENDPOINT / \
                  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is deprecated; use \
-                 GROK_INTERNAL_OTLP_TRACES_ENDPOINT instead — the standard OTEL_* vars will \
+                 ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT instead — the standard OTEL_* vars will \
                  route the external OTEL stream only in a future release"
             );
             return legacy;
@@ -407,7 +407,7 @@ impl EndpointsConfig {
         endpoint_consumed || headers_consumed
     }
     /// Trace export enabled unless `OTEL_TRACES_EXPORTER=none`. Deliberately
-    /// still honored by the internal pipeline even with `GROK_EXTERNAL_OTEL`
+    /// still honored by the internal pipeline even with `ATLAS_EXTERNAL_OTEL`
     /// set: disabling internal span export is the safe direction.
     pub fn resolve_traces_export_enabled(&self) -> bool {
         !matches!(
@@ -517,7 +517,7 @@ impl EndpointsConfig {
     pub fn resolve_trace_bucket_url(&self) -> Option<Resolved<String>> {
         resolve_string_flag(
             None,
-            "GROK_TELEMETRY_GCS_BUCKET",
+            "ATLAS_TELEMETRY_GCS_BUCKET",
             self.trace_upload_bucket.as_deref(),
             None,
         )
@@ -541,26 +541,26 @@ impl EndpointsConfig {
 impl Default for EndpointsConfig {
     fn default() -> Self {
         Self {
-            cli_chat_proxy_base_url: std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL").ok(),
-            xai_api_base_url: std::env::var("GROK_XAI_API_BASE_URL")
+            cli_chat_proxy_base_url: std::env::var("ATLAS_CLI_CHAT_PROXY_BASE_URL").ok(),
+            xai_api_base_url: std::env::var("ATLAS_XAI_API_BASE_URL")
                 .unwrap_or_else(|_| XAI_API_BASE_URL_DEFAULT.to_owned()),
             alpha_test_key: None,
-            models_base_url: env_string("GROK_MODELS_BASE_URL"),
-            models_list_url: env_string("GROK_MODELS_LIST_URL"),
-            feedback_base_url: env_string("GROK_FEEDBACK_BASE_URL"),
-            trace_upload_url: env_string("GROK_TRACE_UPLOAD_URL"),
-            trace_upload_bucket: env_string("GROK_TRACE_UPLOAD_BUCKET"),
-            trace_upload_region: env_string("GROK_TRACE_UPLOAD_REGION"),
-            trace_upload_credentials_file: env_string("GROK_TRACE_UPLOAD_CREDENTIALS_FILE"),
+            models_base_url: env_string("ATLAS_MODELS_BASE_URL"),
+            models_list_url: env_string("ATLAS_MODELS_LIST_URL"),
+            feedback_base_url: env_string("ATLAS_FEEDBACK_BASE_URL"),
+            trace_upload_url: env_string("ATLAS_TRACE_UPLOAD_URL"),
+            trace_upload_bucket: env_string("ATLAS_TRACE_UPLOAD_BUCKET"),
+            trace_upload_region: env_string("ATLAS_TRACE_UPLOAD_REGION"),
+            trace_upload_credentials_file: env_string("ATLAS_TRACE_UPLOAD_CREDENTIALS_FILE"),
             trace_upload_credentials: None,
-            trace_upload_endpoint_url: env_string("GROK_TRACE_UPLOAD_ENDPOINT_URL"),
-            deployment_key: env_string("GROK_DEPLOYMENT_KEY"),
-            managed_config_url: env_string("GROK_MANAGED_CONFIG_URL"),
+            trace_upload_endpoint_url: env_string("ATLAS_TRACE_UPLOAD_ENDPOINT_URL"),
+            deployment_key: env_string("ATLAS_DEPLOYMENT_KEY"),
+            managed_config_url: env_string("ATLAS_MANAGED_CONFIG_URL"),
             otel_exporter_otlp_endpoint: env_string("OTEL_EXPORTER_OTLP_ENDPOINT"),
             otel_exporter_otlp_traces_endpoint: env_string("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
             otel_exporter_otlp_headers: env_string("OTEL_EXPORTER_OTLP_HEADERS"),
-            grok_internal_otlp_traces_endpoint: env_string("GROK_INTERNAL_OTLP_TRACES_ENDPOINT"),
-            grok_internal_otlp_headers: env_string("GROK_INTERNAL_OTLP_HEADERS"),
+            grok_internal_otlp_traces_endpoint: env_string("ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT"),
+            grok_internal_otlp_headers: env_string("ATLAS_INTERNAL_OTLP_HEADERS"),
             external_otel_master_switch: external_otel_master_switch_resolved(),
             otel_traces_exporter: env_string("OTEL_TRACES_EXPORTER"),
             otel_traces_export_interval: env_string("OTEL_BSP_SCHEDULE_DELAY")
@@ -891,7 +891,7 @@ impl PluginsConfig {
     /// read here: a malicious repo could pre-populate `enabledPlugins` to
     /// bypass the project-plugin auto-disable logic in `populate_plugin_lists`,
     /// enabling attacker-controlled hooks (e.g. SessionStart → RCE).
-    /// Native `.grok/config.toml` entries already present take precedence:
+    /// Native `.atlas/config.toml` entries already present take precedence:
     /// a name is only added if it isn't already in the opposite list.
     pub fn merge_claude_enabled_plugins(&mut self, _cwd: Option<&std::path::Path>) {
         if crate::claude_import::is_claude_import_marked_with_log("merge_claude_enabled_plugins") {
@@ -1130,12 +1130,12 @@ impl SandboxSettingsConfig {
         if let Some(val) = requirement {
             return Resolved::new(val.to_owned(), ConfigSource::Requirement);
         }
-        resolve_string_flag(cli_arg, "GROK_SANDBOX", self.profile.as_deref(), None)
+        resolve_string_flag(cli_arg, "ATLAS_SANDBOX", self.profile.as_deref(), None)
             .unwrap_or_else(|| Resolved::new("off".to_owned(), ConfigSource::Default))
     }
     /// Resolve auto_allow_bash: requirement > env > config > default (false).
     pub fn resolve_auto_allow_bash(&self, requirement: Option<bool>) -> Resolved<bool> {
-        BoolFlag::env("GROK_SANDBOX_AUTO_ALLOW_BASH")
+        BoolFlag::env("ATLAS_SANDBOX_AUTO_ALLOW_BASH")
             .requirement(requirement)
             .config(self.auto_allow_bash)
             .resolve()
@@ -1191,7 +1191,7 @@ impl SuggestionsConfig {
         &self,
         remote: Option<&crate::util::config::RemoteSettings>,
     ) -> Resolved<bool> {
-        BoolFlag::env("GROK_SUGGESTIONS")
+        BoolFlag::env("ATLAS_SUGGESTIONS")
             .config(self.enabled)
             .feature_flag(remote.and_then(|r| r.suggestions_enabled))
             .default(false)
@@ -1201,7 +1201,7 @@ impl SuggestionsConfig {
         &self,
         remote: Option<&crate::util::config::RemoteSettings>,
     ) -> Resolved<bool> {
-        BoolFlag::env("GROK_SUGGESTIONS_AI")
+        BoolFlag::env("ATLAS_SUGGESTIONS_AI")
             .config(self.ai_enabled)
             .feature_flag(remote.and_then(|r| r.suggestions_ai_enabled))
             .default(false)
@@ -1210,7 +1210,7 @@ impl SuggestionsConfig {
     pub fn resolve_ai_model(&self) -> String {
         resolve_string_flag(
             None,
-            "GROK_SUGGESTIONS_AI_MODEL",
+            "ATLAS_SUGGESTIONS_AI_MODEL",
             self.ai_model.as_deref(),
             None,
         )
@@ -1230,8 +1230,8 @@ pub struct StorageConfig {
 }
 /// `[paths]` configuration: extra directories to scan for skills, rules, etc.
 ///
-/// These supplement the built-in scan locations (`.grok/skills/`,
-/// `.agents/skills/`, `~/.grok/skills/`). They're written by `/import-claude`
+/// These supplement the built-in scan locations (`.atlas/skills/`,
+/// `.agents/skills/`, `~/.atlas/skills/`). They're written by `/import-claude`
 /// to preserve previously-discovered Claude directories after the runtime
 /// `.claude/` cutoff (see `[claude_compat] imported`).
 ///
@@ -1392,7 +1392,7 @@ pub struct Config {
     pub diagnostics: DiagnosticsConfig,
     /// Storage mode for session persistence.
     /// When running in relay/headless mode, this should be set to Writeback.
-    /// Defaults to reading from GROK_STORAGE_MODE env var.
+    /// Defaults to reading from ATLAS_STORAGE_MODE env var.
     #[serde(skip)]
     pub storage_mode: StorageMode,
     /// CLI override for the default model ID.
@@ -1447,7 +1447,7 @@ pub struct Config {
     #[serde(skip)]
     pub cli_agent_overrides: CliAgentOverrides,
     /// Whether subagent (task tool) support is enabled. Enabled by default;
-    /// disabled only via `GROK_SUBAGENTS=0` or `[subagents] enabled = false`.
+    /// disabled only via `ATLAS_SUBAGENTS=0` or `[subagents] enabled = false`.
     /// Not remotely gated.
     #[serde(skip)]
     pub subagents_enabled: bool,
@@ -1461,7 +1461,7 @@ pub struct Config {
     #[serde(skip)]
     pub subagent_toggle: std::collections::HashMap<String, bool>,
     /// Per-subagent role definitions from `[subagents.roles]` in config.toml
-    /// and `.grok/roles/*.toml` file discovery.
+    /// and `.atlas/roles/*.toml` file discovery.
     #[serde(skip)]
     pub subagent_roles:
         std::collections::HashMap<String, xai_grok_subagent_resolution::config::SubagentRole>,
@@ -1617,7 +1617,7 @@ pub use xai_grok_shared::ui_config::{ContextualHints, UiConfig};
 ///
 /// ```toml
 /// [agent]
-/// # Use a named agent (looked up via discovery: .grok/agents/, ~/.grok/agents/, built-ins)
+/// # Use a named agent (looked up via discovery: .atlas/agents/, ~/.atlas/agents/, built-ins)
 /// name = "my-custom-agent"
 ///
 /// # OR: path to an agent definition file (.md with YAML frontmatter)
@@ -1628,7 +1628,7 @@ pub use xai_grok_shared::ui_config::{ContextualHints, UiConfig};
 /// 1. ACP session-level `_meta.agentProfile`
 /// 2. CLI `--agent-profile` flag
 /// 3. `[agent]` config.toml section (this config)
-/// 4. `GROK_AGENT` env var
+/// 4. `ATLAS_AGENT` env var
 /// 5. Default `grok-build` agent
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -1640,7 +1640,7 @@ pub struct AgentSelectionConfig {
     pub name: Option<String>,
     /// Path to an agent definition file (.md with YAML frontmatter).
     /// When set, the agent is loaded from this file.
-    /// Supports environment variable expansion (e.g., `$HOME/.grok/agents/my-agent.md`).
+    /// Supports environment variable expansion (e.g., `$HOME/.atlas/agents/my-agent.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition: Option<PathBuf>,
     /// Global system-prompt identity label. Per-model override wins.
@@ -1972,7 +1972,7 @@ impl Config {
         if let Some(v) = ctx.remote_settings.and_then(|s| s.path_not_found_hints) {
             self.path_not_found_hints = v;
         }
-        self.auto_wake_enabled = BoolFlag::env("GROK_AUTO_WAKE")
+        self.auto_wake_enabled = BoolFlag::env("ATLAS_AUTO_WAKE")
             .config(self.features.auto_wake)
             .feature_flag(ctx.remote_settings.and_then(|r| r.auto_wake_enabled))
             .default(true)
@@ -2038,7 +2038,7 @@ impl Config {
     }
     fn apply_env_overrides(&mut self) {
         self.telemetry.apply_env_overrides();
-        if let Some(mode) = env_telemetry_mode("GROK_TELEMETRY_ENABLED") {
+        if let Some(mode) = env_telemetry_mode("ATLAS_TELEMETRY_ENABLED") {
             self.features.telemetry = Some(mode);
         }
     }
@@ -2059,7 +2059,7 @@ impl Config {
     }
     /// Two-pass (prefire) compaction gate. Default OFF (opt-in) — enable via
     /// remote settings `two_pass_compaction_enabled`, the `[features] two_pass_compaction`
-    /// config.toml key, or `GROK_TWO_PASS_COMPACTION` env.
+    /// config.toml key, or `ATLAS_TWO_PASS_COMPACTION` env.
     pub fn is_two_pass_compaction_enabled(&self) -> bool {
         self.resolve_two_pass_compaction().value
     }
@@ -2067,7 +2067,7 @@ impl Config {
         if let Some(mode) = self.requirements.telemetry.pinned() {
             return Resolved::new(mode, ConfigSource::Requirement);
         }
-        if let Some(mode) = env_telemetry_mode("GROK_TELEMETRY_ENABLED") {
+        if let Some(mode) = env_telemetry_mode("ATLAS_TELEMETRY_ENABLED") {
             return Resolved::new(mode, ConfigSource::Env);
         }
         if let Some(mode) = self.features.telemetry {
@@ -2094,7 +2094,7 @@ impl Config {
                 .as_ref()
                 .and_then(|s| s.trace_upload_enabled)
         };
-        BoolFlag::env("GROK_TELEMETRY_TRACE_UPLOAD")
+        BoolFlag::env("ATLAS_TELEMETRY_TRACE_UPLOAD")
             .requirement(self.requirements.trace_upload.pinned())
             .config(self.telemetry.trace_upload)
             .feature_flag(ff)
@@ -2142,8 +2142,8 @@ impl Config {
             .source.to_string(), "telemetry_mode" : telemetry.value.to_string(),
             "telemetry_source" : telemetry.source.to_string(), "in_requirement_pin" : req
             .pinned(), "in_requirement_src" : req.source().map(| s | s.to_string()),
-            "in_env_trace_upload" : std::env::var("GROK_TELEMETRY_TRACE_UPLOAD").ok(),
-            "in_env_telemetry_enabled" : std::env::var("GROK_TELEMETRY_ENABLED").ok(),
+            "in_env_trace_upload" : std::env::var("ATLAS_TELEMETRY_TRACE_UPLOAD").ok(),
+            "in_env_telemetry_enabled" : std::env::var("ATLAS_TELEMETRY_ENABLED").ok(),
             "in_cfg_telemetry_trace_upload" : self.telemetry.trace_upload,
             "in_cfg_features_telemetry" : self.features.telemetry.map(| m | m
             .to_string()), "in_remote_trace_upload_enabled" : self.remote_settings
@@ -2156,7 +2156,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.feedback_enabled);
-        BoolFlag::env("GROK_FEEDBACK_ENABLED")
+        BoolFlag::env("ATLAS_FEEDBACK_ENABLED")
             .requirement(self.requirements.feedback.pinned())
             .config(self.features.feedback)
             .feature_flag(ff)
@@ -2168,7 +2168,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.two_pass_compaction_enabled);
-        BoolFlag::env("GROK_TWO_PASS_COMPACTION")
+        BoolFlag::env("ATLAS_TWO_PASS_COMPACTION")
             .config(self.features.two_pass_compaction)
             .feature_flag(ff)
             .default(false)
@@ -2180,7 +2180,7 @@ impl Config {
     /// PER-FIELD across the `[doom_loop_recovery]` TOML table and the
     /// remote settings `doom_loop_recovery` object (a partial remote object only
     /// overrides the fields it sets). Gate precedence: env
-    /// `GROK_DOOM_LOOP_RECOVERY` > TOML `enabled` > remote `enabled` >
+    /// `ATLAS_DOOM_LOOP_RECOVERY` > TOML `enabled` > remote `enabled` >
     /// default off — `None` IS the off state, so disabled has exactly one
     /// spelling. Tunables have no env layer (TOML > remote > default) and
     /// are clamped to their documented ranges. Returns the composite runtime
@@ -2194,7 +2194,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.doom_loop_recovery.as_ref());
-        let enabled = BoolFlag::env("GROK_DOOM_LOOP_RECOVERY")
+        let enabled = BoolFlag::env("ATLAS_DOOM_LOOP_RECOVERY")
             .config(self.doom_loop_recovery.enabled)
             .feature_flag(remote.and_then(|s| s.enabled))
             .default(false)
@@ -2214,7 +2214,7 @@ impl Config {
         })
     }
     /// Gate first-run auto-registration of the official xAI marketplace source.
-    /// Precedence: env `GROK_OFFICIAL_MARKETPLACE_AUTO_REGISTER` > remote settings >
+    /// Precedence: env `ATLAS_OFFICIAL_MARKETPLACE_AUTO_REGISTER` > remote settings >
     /// default off (so only remote settings-targeted teams get it pre-public). No
     /// managed `.requirement` pin: `marketplace_allowlist` already gates sources.
     pub(crate) fn resolve_official_marketplace_auto_register(&self) -> Resolved<bool> {
@@ -2222,7 +2222,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.official_marketplace_auto_register);
-        BoolFlag::env("GROK_OFFICIAL_MARKETPLACE_AUTO_REGISTER")
+        BoolFlag::env("ATLAS_OFFICIAL_MARKETPLACE_AUTO_REGISTER")
             .feature_flag(ff)
             .default(false)
             .resolve()
@@ -2232,7 +2232,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.lsp_tools_enabled);
-        BoolFlag::env("GROK_LSP_TOOLS")
+        BoolFlag::env("ATLAS_LSP_TOOLS")
             .requirement(self.requirements.lsp_tools.pinned())
             .config(self.features.lsp_tools)
             .feature_flag(ff)
@@ -2243,7 +2243,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.web_fetch_enabled);
-        BoolFlag::env("GROK_WEB_FETCH")
+        BoolFlag::env("ATLAS_WEB_FETCH")
             .requirement(self.requirements.web_fetch.pinned())
             .config(self.features.web_fetch)
             .feature_flag(ff)
@@ -2258,7 +2258,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.ask_user_question_enabled);
-        BoolFlag::env("GROK_ASK_USER_QUESTION")
+        BoolFlag::env("ATLAS_ASK_USER_QUESTION")
             .requirement(self.requirements.ask_user_question.pinned())
             .config(self.features.ask_user_question)
             .feature_flag(ff)
@@ -2267,10 +2267,10 @@ impl Config {
     }
     /// Session recap gate (the `/recap` command + automatic return-from-away
     /// recap). Default ON — disable via remote settings `session_recap`, the
-    /// `[features] session_recap` config.toml key, or `GROK_SESSION_RECAP` env.
+    /// `[features] session_recap` config.toml key, or `ATLAS_SESSION_RECAP` env.
     pub(crate) fn resolve_session_recap(&self) -> Resolved<bool> {
         let ff = self.remote_settings.as_ref().and_then(|s| s.session_recap);
-        BoolFlag::env("GROK_SESSION_RECAP")
+        BoolFlag::env("ATLAS_SESSION_RECAP")
             .config(self.features.session_recap)
             .feature_flag(ff)
             .default(true)
@@ -2278,7 +2278,7 @@ impl Config {
     }
     /// Voice dictation gate. Default on.
     ///
-    /// Precedence: requirements > `GROK_VOICE_MODE` > config/managed
+    /// Precedence: requirements > `ATLAS_VOICE_MODE` > config/managed
     /// `[features] voice_mode` > remote `voice_mode_enabled` > default true.
     /// The pager may force API-key sessions on when only remote is off.
     pub(crate) fn resolve_voice_mode(&self) -> Resolved<bool> {
@@ -2286,17 +2286,17 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.voice_mode_enabled);
-        BoolFlag::env("GROK_VOICE_MODE")
+        BoolFlag::env("ATLAS_VOICE_MODE")
             .requirement(self.requirements.voice_mode.pinned())
             .config(self.features.voice_mode)
             .feature_flag(ff)
             .default(true)
             .resolve()
     }
-    /// `image_gen` tool gate. Default on; gated only by the `GROK_IMAGE_GEN`
+    /// `image_gen` tool gate. Default on; gated only by the `ATLAS_IMAGE_GEN`
     /// env var and managed-config requirement pin.
     pub(crate) fn resolve_image_gen(&self) -> Resolved<bool> {
-        BoolFlag::env("GROK_IMAGE_GEN")
+        BoolFlag::env("ATLAS_IMAGE_GEN")
             .requirement(self.requirements.image_gen.pinned())
             .default(true)
             .resolve()
@@ -2307,7 +2307,7 @@ impl Config {
     /// when it lists `image_edit`, the tool is force-removed and local
     /// env/config can't re-enable it. A managed requirement pin still outranks
     /// it; otherwise the tool defaults on and is overridable via
-    /// `GROK_IMAGE_EDIT`.
+    /// `ATLAS_IMAGE_EDIT`.
     pub(crate) fn resolve_image_edit(&self) -> Resolved<bool> {
         use xai_grok_tools::implementations::grok_build::IMAGE_EDIT_TOOL_NAME;
         if let Some(pinned) = self.requirements.image_edit.pinned() {
@@ -2320,17 +2320,17 @@ impl Config {
         {
             return Resolved::new(false, ConfigSource::Remote);
         }
-        BoolFlag::env("GROK_IMAGE_EDIT").default(true).resolve()
+        BoolFlag::env("ATLAS_IMAGE_EDIT").default(true).resolve()
     }
     /// Optional Imagine model override for `image_gen`. When set (non-empty),
     /// `image_gen` calls this model slug instead of the default quality model.
-    /// Precedence: env `GROK_IMAGE_GEN_MODEL_OVERRIDE` > `[features]
+    /// Precedence: env `ATLAS_IMAGE_GEN_MODEL_OVERRIDE` > `[features]
     /// image_gen_model_override` config > remote settings `image_gen_model_override`.
     /// `None` → default model (`grok-imagine-image-quality`).
     pub(crate) fn resolve_image_gen_model_override(&self) -> Option<String> {
         resolve_string_flag(
             None,
-            "GROK_IMAGE_GEN_MODEL_OVERRIDE",
+            "ATLAS_IMAGE_GEN_MODEL_OVERRIDE",
             self.features.image_gen_model_override.as_deref(),
             self.remote_settings
                 .as_ref()
@@ -2346,7 +2346,7 @@ impl Config {
     /// all still override.
     pub(crate) fn resolve_goal(&self) -> Resolved<bool> {
         let ff = self.remote_settings.as_ref().and_then(|s| s.goal_enabled);
-        BoolFlag::env("GROK_GOAL")
+        BoolFlag::env("ATLAS_GOAL")
             .config(self.goal.enabled)
             .feature_flag(ff)
             .default(true)
@@ -2358,7 +2358,7 @@ impl Config {
     /// value the actor stores), passed in so a sub-role default can never
     /// disagree with whether `/goal` is on.
     pub(crate) fn resolve_goal_classifier_enabled(&self, goal_enabled: bool) -> Resolved<bool> {
-        BoolFlag::env("GROK_GOAL_CLASSIFIER")
+        BoolFlag::env("ATLAS_GOAL_CLASSIFIER")
             .config(self.goal.classifier_enabled)
             .feature_flag(
                 self.remote_settings
@@ -2369,7 +2369,7 @@ impl Config {
             .resolve()
     }
     pub(crate) fn resolve_goal_planner_enabled(&self, goal_enabled: bool) -> Resolved<bool> {
-        BoolFlag::env("GROK_GOAL_PLANNER")
+        BoolFlag::env("ATLAS_GOAL_PLANNER")
             .config(self.goal.planner_enabled)
             .feature_flag(
                 self.remote_settings
@@ -2380,7 +2380,7 @@ impl Config {
             .resolve()
     }
     pub(crate) fn resolve_goal_summary_enabled(&self, goal_enabled: bool) -> Resolved<bool> {
-        BoolFlag::env("GROK_GOAL_SUMMARY")
+        BoolFlag::env("ATLAS_GOAL_SUMMARY")
             .config(self.goal.summary_enabled)
             .feature_flag(
                 self.remote_settings
@@ -2419,7 +2419,7 @@ impl Config {
             GOAL_VERIFIER_SKEPTIC_COUNT, GOAL_VERIFIER_SKEPTIC_MAX, GOAL_VERIFIER_SKEPTIC_MIN,
         };
         Self::resolve_goal_u32(
-            "GROK_GOAL_VERIFIER_N",
+            "ATLAS_GOAL_VERIFIER_N",
             self.goal.verifier_count,
             self.remote_settings
                 .as_ref()
@@ -2435,7 +2435,7 @@ impl Config {
             GOAL_CLASSIFIER_MAX_RUNS_DEFAULT, GOAL_CLASSIFIER_MAX_RUNS_MIN,
         };
         Self::resolve_goal_u32(
-            "GROK_GOAL_CLASSIFIER_MAX",
+            "ATLAS_GOAL_CLASSIFIER_MAX",
             self.goal.classifier_max_runs,
             self.remote_settings
                 .as_ref()
@@ -2449,7 +2449,7 @@ impl Config {
     /// (`max(1, cap / 2)`); floored at 1 so it can never silently disable.
     pub(crate) fn resolve_goal_strategist_every(&self, classifier_max_runs: u32) -> Resolved<u32> {
         Self::resolve_goal_u32(
-            "GROK_GOAL_STRATEGIST_EVERY",
+            "ATLAS_GOAL_STRATEGIST_EVERY",
             self.goal.strategist_every,
             self.remote_settings
                 .as_ref()
@@ -2461,7 +2461,7 @@ impl Config {
     /// Re-verify escalation threshold; floored at 1. No remote layer.
     pub(crate) fn resolve_goal_reverify_after(&self) -> Resolved<u32> {
         Self::resolve_goal_u32(
-            "GROK_GOAL_REVERIFY_AFTER",
+            "ATLAS_GOAL_REVERIFY_AFTER",
             self.goal.reverify_after,
             None,
             crate::session::acp_session::GOAL_REVERIFY_AFTER_DEFAULT,
@@ -2471,7 +2471,7 @@ impl Config {
     /// When `true`, every `/goal` role inherits the current model regardless of
     /// configured pairs.
     pub(crate) fn resolve_goal_use_current_model_only(&self) -> Resolved<bool> {
-        BoolFlag::env("GROK_GOAL_USE_CURRENT_MODEL_ONLY")
+        BoolFlag::env("ATLAS_GOAL_USE_CURRENT_MODEL_ONLY")
             .config(self.goal.use_current_model_only)
             .default(false)
             .resolve()
@@ -2566,7 +2566,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.write_file_enabled);
-        BoolFlag::env("GROK_WRITE_FILE")
+        BoolFlag::env("ATLAS_WRITE_FILE")
             .requirement(self.requirements.write_file.pinned())
             .config(self.features.write_file)
             .feature_flag(ff)
@@ -2574,17 +2574,17 @@ impl Config {
             .resolve()
     }
     pub(crate) fn resolve_backend_tools(&self) -> Resolved<bool> {
-        BoolFlag::env("GROK_BACKEND_SEARCH")
+        BoolFlag::env("ATLAS_BACKEND_SEARCH")
             .config(self.features.backend_tools)
             .default(true)
             .resolve()
     }
-    /// Resolve the mode (env `GROK_COMPACTION_MODE` > config > remote settings >
+    /// Resolve the mode (env `ATLAS_COMPACTION_MODE` > config > remote settings >
     /// default, unrecognized falling through) and, for `Segments`, attach the
     /// separately-resolved detail level.
     pub(crate) fn resolve_compaction_mode(&self) -> xai_chat_state::CompactionMode {
         resolve_compaction_mode_from(
-            env_string("GROK_COMPACTION_MODE").as_deref(),
+            env_string("ATLAS_COMPACTION_MODE").as_deref(),
             self.features.compaction_mode.as_deref(),
             self.remote_settings
                 .as_ref()
@@ -2592,9 +2592,9 @@ impl Config {
         )
         .with_segment_detail(self.resolve_compaction_detail())
     }
-    /// Resolve verbatim-input flag: env `GROK_COMPACTION_VERBATIM_INPUT` > config > remote settings > default `true`.
+    /// Resolve verbatim-input flag: env `ATLAS_COMPACTION_VERBATIM_INPUT` > config > remote settings > default `true`.
     pub(crate) fn resolve_compaction_verbatim_input(&self) -> bool {
-        BoolFlag::env("GROK_COMPACTION_VERBATIM_INPUT")
+        BoolFlag::env("ATLAS_COMPACTION_VERBATIM_INPUT")
             .config(self.features.compaction_verbatim_input)
             .feature_flag(
                 self.remote_settings
@@ -2605,13 +2605,13 @@ impl Config {
             .resolve()
             .value
     }
-    /// Precedence: env `GROK_COMPACTION_DETAIL`, then config
+    /// Precedence: env `ATLAS_COMPACTION_DETAIL`, then config
     /// `features.compaction_detail`, then remote settings
     /// `remote_settings.compaction_detail`, then default (`verbose`). Drives the
     /// `segments` verbatim detail level.
     fn resolve_compaction_detail(&self) -> xai_chat_state::CompactionDetail {
         resolve_compaction_detail_from(
-            env_string("GROK_COMPACTION_DETAIL").as_deref(),
+            env_string("ATLAS_COMPACTION_DETAIL").as_deref(),
             self.features.compaction_detail.as_deref(),
             self.remote_settings
                 .as_ref()
@@ -2623,7 +2623,7 @@ impl Config {
             .remote_settings
             .as_ref()
             .and_then(|s| s.cancel_rewind_enabled);
-        BoolFlag::env("GROK_CANCEL_REWIND")
+        BoolFlag::env("ATLAS_CANCEL_REWIND")
             .config(self.features.cancel_rewind)
             .feature_flag(ff)
             .default(true)
@@ -2634,9 +2634,9 @@ impl Config {
     /// Enterprise OIDC (`oidc` in config.toml) always wins — this only gates
     /// the default xAI OAuth2 fallback when no enterprise OIDC is configured.
     ///
-    /// Priority: `--oauth` > GROK_OAUTH_ENABLED env > default (true = OAuth).
+    /// Priority: `--oauth` > ATLAS_OAUTH_ENABLED env > default (true = OAuth).
     pub fn resolve_grok_oauth(&self, cli_oidc: Option<bool>) -> Resolved<bool> {
-        BoolFlag::env("GROK_OAUTH_ENABLED")
+        BoolFlag::env("ATLAS_OAUTH_ENABLED")
             .cli(cli_oidc)
             .default(true)
             .resolve()
@@ -2684,7 +2684,7 @@ impl Config {
         resolve_mcp_push_server_status(None, None, self.features.mcp_push_server_status, None, None)
     }
     /// Resolve whether the leader's `ConfigFileWatcher` adds the two
-    /// narrow non-recursive watches for `<cwd>/` and `<cwd>/.grok/`.
+    /// narrow non-recursive watches for `<cwd>/` and `<cwd>/.atlas/`.
     ///
     /// Thin delegate to the canonical
     /// [`resolve_mcp_recursive_config_watch`] free function — mirrors
@@ -2707,7 +2707,7 @@ impl Config {
 /// Canonical resolver for `mcp.liveness_watchers`. Stacks the full
 /// 7-step `BoolFlag` precedence:
 ///
-/// `requirement > cli > env (GROK_MCP_LIVENESS_WATCHERS) > config >
+/// `requirement > cli > env (ATLAS_MCP_LIVENESS_WATCHERS) > config >
 /// managed > feature_flag > default (true)`.
 ///
 /// Both `Config::resolve_mcp_liveness_watchers` and
@@ -2724,7 +2724,7 @@ pub fn resolve_mcp_liveness_watchers(
     managed: Option<bool>,
     feature_flag: Option<bool>,
 ) -> Resolved<bool> {
-    BoolFlag::env("GROK_MCP_LIVENESS_WATCHERS")
+    BoolFlag::env("ATLAS_MCP_LIVENESS_WATCHERS")
         .requirement(requirement)
         .cli(cli)
         .config(config)
@@ -2736,7 +2736,7 @@ pub fn resolve_mcp_liveness_watchers(
 /// Canonical resolver for `mcp.auto_restart`. Stacks the full 7-step
 /// `BoolFlag` precedence:
 ///
-/// `requirement > cli > env (GROK_MCP_AUTO_RESTART) > config >
+/// `requirement > cli > env (ATLAS_MCP_AUTO_RESTART) > config >
 /// managed > feature_flag > default (true)`.
 ///
 /// Mirrors [`resolve_mcp_liveness_watchers`]. Both
@@ -2744,7 +2744,7 @@ pub fn resolve_mcp_liveness_watchers(
 /// `util::config::resolve_mcp_auto_restart` delegate here so the
 /// precedence is single-sourced.
 ///
-/// Recovery is on by default; opt out via `GROK_MCP_AUTO_RESTART=false`,
+/// Recovery is on by default; opt out via `ATLAS_MCP_AUTO_RESTART=false`,
 /// `[features] mcp_auto_restart`, or `requirements.toml`.
 pub fn resolve_mcp_auto_restart(
     requirement: Option<bool>,
@@ -2753,7 +2753,7 @@ pub fn resolve_mcp_auto_restart(
     managed: Option<bool>,
     feature_flag: Option<bool>,
 ) -> Resolved<bool> {
-    BoolFlag::env("GROK_MCP_AUTO_RESTART")
+    BoolFlag::env("ATLAS_MCP_AUTO_RESTART")
         .requirement(requirement)
         .cli(cli)
         .config(config)
@@ -2766,7 +2766,7 @@ pub fn resolve_mcp_auto_restart(
 /// 7-step `BoolFlag` precedence as
 /// [`resolve_mcp_liveness_watchers`]:
 ///
-/// `requirement > cli > env (GROK_MCP_PUSH_SERVER_STATUS) > config >
+/// `requirement > cli > env (ATLAS_MCP_PUSH_SERVER_STATUS) > config >
 /// managed > feature_flag > default (true)`.
 ///
 /// Both `Config::resolve_mcp_push_server_status` and
@@ -2783,7 +2783,7 @@ pub fn resolve_mcp_push_server_status(
     managed: Option<bool>,
     feature_flag: Option<bool>,
 ) -> Resolved<bool> {
-    BoolFlag::env("GROK_MCP_PUSH_SERVER_STATUS")
+    BoolFlag::env("ATLAS_MCP_PUSH_SERVER_STATUS")
         .requirement(requirement)
         .cli(cli)
         .config(config)
@@ -2796,7 +2796,7 @@ pub fn resolve_mcp_push_server_status(
 /// same 7-step `BoolFlag` precedence as
 /// [`resolve_mcp_liveness_watchers`]:
 ///
-/// `requirement > cli > env (GROK_MCP_RECURSIVE_CONFIG_WATCH) >
+/// `requirement > cli > env (ATLAS_MCP_RECURSIVE_CONFIG_WATCH) >
 /// config > managed > feature_flag > default (true)`.
 ///
 /// Both `Config::resolve_mcp_recursive_config_watch` and
@@ -2807,7 +2807,7 @@ pub fn resolve_mcp_push_server_status(
 /// non-recursive cwd watches default-on. The flag exists primarily
 /// as a kill switch during the rollout: if the FSEvents flakiness
 /// on macOS or an inotify-quota issue on Linux causes a regression,
-/// operators flip this flag (e.g. via `GROK_MCP_RECURSIVE_CONFIG_
+/// operators flip this flag (e.g. via `ATLAS_MCP_RECURSIVE_CONFIG_
 /// WATCH=0`) and the leader falls back to the prior behavior (no cwd
 /// watches; user-triggered refresh is the only project-config
 /// reload path).
@@ -2823,7 +2823,7 @@ pub fn resolve_mcp_recursive_config_watch(
     managed: Option<bool>,
     feature_flag: Option<bool>,
 ) -> Resolved<bool> {
-    BoolFlag::env("GROK_MCP_RECURSIVE_CONFIG_WATCH")
+    BoolFlag::env("ATLAS_MCP_RECURSIVE_CONFIG_WATCH")
         .requirement(requirement)
         .cli(cli)
         .config(config)
@@ -2940,7 +2940,7 @@ pub fn is_telemetry_explicitly_disabled_sync() -> bool {
 pub fn is_error_reporting_disabled_sync() -> bool {
     !SyncBoolFlag::new(error_reporting_enabled_from_toml)
         .disable_env("DISABLE_ERROR_REPORTING")
-        .enable_env(|| env_bool("GROK_ERROR_REPORTING"))
+        .enable_env(|| env_bool("ATLAS_ERROR_REPORTING"))
         .inherit(|| !is_telemetry_disabled_sync())
         .resolve()
 }
@@ -2961,12 +2961,12 @@ fn error_reporting_enabled_from_toml(root: &toml::Value) -> Option<bool> {
         .get("error_reporting")?
         .as_bool()
 }
-/// `GROK_TELEMETRY_ENABLED` resolved through `TelemetryMode::parse` so the
+/// `ATLAS_TELEMETRY_ENABLED` resolved through `TelemetryMode::parse` so the
 /// extended string forms (e.g. `"session_metrics"`) are accepted.
 fn grok_telemetry_env_enabled() -> Option<bool> {
-    env_telemetry_mode("GROK_TELEMETRY_ENABLED").map(|m| !m.is_disabled())
+    env_telemetry_mode("ATLAS_TELEMETRY_ENABLED").map(|m| !m.is_disabled())
 }
-/// Load `~/.grok/requirements.toml` standalone so the admin pin can beat
+/// Load `~/.atlas/requirements.toml` standalone so the admin pin can beat
 /// env vars. The merged config layer can't express that — last-merge-wins
 /// loses provenance.
 pub(crate) fn read_requirements_toml() -> Option<toml::Value> {
@@ -2975,7 +2975,7 @@ pub(crate) fn read_requirements_toml() -> Option<toml::Value> {
     toml::from_str(&content).ok()
 }
 /// Resolve the external-OTEL master switch exactly the way the external
-/// stream's activation does: **requirement pin > `GROK_EXTERNAL_OTEL` env >
+/// stream's activation does: **requirement pin > `ATLAS_EXTERNAL_OTEL` env >
 /// `[telemetry].otel_enabled` config layer (managed config included) > off**.
 ///
 /// The internal trace pipeline keys its "ignore `OTEL_EXPORTER_OTLP_*`"
@@ -2988,7 +2988,7 @@ pub(crate) fn read_requirements_toml() -> Option<toml::Value> {
 pub(crate) fn external_otel_master_switch_resolved() -> bool {
     external_otel_master_switch_from(
         xai_grok_config::load_merged_requirements().as_ref(),
-        env_bool("GROK_EXTERNAL_OTEL"),
+        env_bool("ATLAS_EXTERNAL_OTEL"),
         crate::config::load_effective_config().ok().as_ref(),
     )
 }
@@ -3771,7 +3771,7 @@ pub struct ModelEntryConfig {
     pub inference_idle_timeout_secs: Option<u64>,
     /// Maximum number of retries for transient API errors (429, 500, 502, etc.)
     /// during a single inference request. Default: 5.
-    /// Can also be set via the `GROK_MAX_RETRIES` environment variable.
+    /// Can also be set via the `ATLAS_MAX_RETRIES` environment variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     /// Exclude from the client model picker; still usable internally (web_search, etc.).
@@ -4439,11 +4439,11 @@ pub struct Features {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend_tools: Option<bool>,
     /// `summary` (default) | `transcript` | `segments`. `None` = defer to CLI /
-    /// env (`GROK_COMPACTION_MODE`). Parsed via `CompactionMode::parse`.
+    /// env (`ATLAS_COMPACTION_MODE`). Parsed via `CompactionMode::parse`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_mode: Option<String>,
     /// `none` | `minimal` | `balanced` | `verbose` (default). `None` = defer to
-    /// env (`GROK_COMPACTION_DETAIL`). The `segments` verbatim detail level.
+    /// env (`ATLAS_COMPACTION_DETAIL`). The `segments` verbatim detail level.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_detail: Option<String>,
     /// Feed the summarizer the verbatim conversation instead of the lossy rewrite; `None` = defer to env/remote settings/default (true).
@@ -4477,7 +4477,7 @@ pub struct Features {
     /// auto-restarted (their existing `reset_transport` path
     /// covers the recovery). `None` = defer to env / default
     /// (recovery is on by default; set `false` here / via
-    /// `GROK_MCP_AUTO_RESTART` to opt out).
+    /// `ATLAS_MCP_AUTO_RESTART` to opt out).
     ///
     /// Resolved via [`Config::resolve_mcp_auto_restart`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4502,17 +4502,17 @@ pub struct Features {
     ///
     /// Practical consequence: setting
     /// `[features] mcp_push_server_status = false` in
-    /// `~/.grok/config.toml` will NOT disable the pager's
+    /// `~/.atlas/config.toml` will NOT disable the pager's
     /// subscription on a freshly-launched process. To disable the
-    /// pager subscription, set `GROK_MCP_PUSH_SERVER_STATUS=0` in
+    /// pager subscription, set `ATLAS_MCP_PUSH_SERVER_STATUS=0` in
     /// the env before launch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_push_server_status: Option<bool>,
     /// Whether the leader's `ConfigFileWatcher` adds the two narrow
-    /// non-recursive watches for `<cwd>/` and `<cwd>/.grok/`.
+    /// non-recursive watches for `<cwd>/` and `<cwd>/.atlas/`.
     ///
     /// When `true` (default), edits to `<cwd>/.mcp.json`,
-    /// `<cwd>/.grok/config.toml`, or `<cwd>/.claude.json` flow
+    /// `<cwd>/.atlas/config.toml`, or `<cwd>/.claude.json` flow
     /// through the watcher → reloader → `ConfigUpdate::
     /// ProjectMcpServersChanged { cwd }` → `app.rs` ACP-injection
     /// pipeline and the affected sessions reload their MCP servers
@@ -5910,18 +5910,18 @@ reasoning_effort = "low"
     }
     #[test]
     fn env_keys_resolve_first_set_wins() {
-        let keys = EnvKeys::new(["GROK_TEST_ENV_KEY_PRIMARY", "GROK_TEST_ENV_KEY_FALLBACK"]);
+        let keys = EnvKeys::new(["ATLAS_TEST_ENV_KEY_PRIMARY", "ATLAS_TEST_ENV_KEY_FALLBACK"]);
         assert_eq!(keys.resolve_value_with(|_| None), None, "none set");
         assert_eq!(
             keys.resolve_value_with(
-                |n| (n == "GROK_TEST_ENV_KEY_FALLBACK").then(|| "from-fallback".into())
+                |n| (n == "ATLAS_TEST_ENV_KEY_FALLBACK").then(|| "from-fallback".into())
             ),
             Some("from-fallback".into())
         );
         assert_eq!(
             keys.resolve_value_with(|n| match n {
-                "GROK_TEST_ENV_KEY_PRIMARY" => Some("from-primary".into()),
-                "GROK_TEST_ENV_KEY_FALLBACK" => Some("from-fallback".into()),
+                "ATLAS_TEST_ENV_KEY_PRIMARY" => Some("from-primary".into()),
+                "ATLAS_TEST_ENV_KEY_FALLBACK" => Some("from-fallback".into()),
                 _ => None,
             }),
             Some("from-primary".into()),
@@ -5929,8 +5929,8 @@ reasoning_effort = "low"
         );
         assert_eq!(
             keys.resolve_value_with(|n| match n {
-                "GROK_TEST_ENV_KEY_PRIMARY" => Some(String::new()),
-                "GROK_TEST_ENV_KEY_FALLBACK" => Some("from-fallback".into()),
+                "ATLAS_TEST_ENV_KEY_PRIMARY" => Some(String::new()),
+                "ATLAS_TEST_ENV_KEY_FALLBACK" => Some("from-fallback".into()),
                 _ => None,
             }),
             Some("from-fallback".into())
@@ -5945,21 +5945,21 @@ reasoning_effort = "low"
     }
     #[test]
     fn env_keys_resolve_skips_whitespace_only_value() {
-        let keys = EnvKeys::new(["GROK_TEST_WS_PRIMARY", "GROK_TEST_WS_FALLBACK"]);
+        let keys = EnvKeys::new(["ATLAS_TEST_WS_PRIMARY", "ATLAS_TEST_WS_FALLBACK"]);
         assert_eq!(
             keys.resolve_value_with(|n| match n {
-                "GROK_TEST_WS_PRIMARY" => Some("   ".into()),
-                "GROK_TEST_WS_FALLBACK" => Some("real".into()),
+                "ATLAS_TEST_WS_PRIMARY" => Some("   ".into()),
+                "ATLAS_TEST_WS_FALLBACK" => Some("real".into()),
                 _ => None,
             }),
             Some("real".into())
         );
         assert_eq!(
-            EnvKeys::single("GROK_TEST_WS_ONLY").resolve_value_with(|_| Some("   ".into())),
+            EnvKeys::single("ATLAS_TEST_WS_ONLY").resolve_value_with(|_| Some("   ".into())),
             None
         );
         assert_eq!(
-            EnvKeys::single("GROK_TEST_WS_PAD").resolve_value_with(|_| Some("  tok  ".into())),
+            EnvKeys::single("ATLAS_TEST_WS_PAD").resolve_value_with(|_| Some("  tok  ".into())),
             Some("  tok  ".into())
         );
     }
@@ -5967,7 +5967,7 @@ reasoning_effort = "low"
     #[serial]
     fn first_own_credential_empty_api_key_falls_through_to_env_key() {
         use xai_grok_test_support::EnvGuard;
-        let var = "GROK_TEST_FIRST_OWN_CRED_ENV";
+        let var = "ATLAS_TEST_FIRST_OWN_CRED_ENV";
         let _guard = EnvGuard::set(var, "env-token");
         let env_key = EnvKeys::single(var);
         assert_eq!(
@@ -5983,8 +5983,8 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_credentials_multi_env_key_uses_lc_alias() {
         use xai_chat_state::AuthType;
-        let primary = "GROK_TEST_MULTI_ENV_PRIMARY";
-        let alias = "GROK_TEST_MULTI_ENV_LC_ALIAS";
+        let primary = "ATLAS_TEST_MULTI_ENV_PRIMARY";
+        let alias = "ATLAS_TEST_MULTI_ENV_LC_ALIAS";
         unsafe {
             std::env::remove_var(primary);
             std::env::set_var(alias, "token-via-lc-alias");
@@ -6019,8 +6019,8 @@ reasoning_effort = "low"
     fn resolve_credentials_empty_env_key_falls_through_to_session() {
         use xai_chat_state::AuthType;
         use xai_grok_test_support::EnvGuard;
-        let primary = "GROK_TEST_EMPTY_ENV_PRIMARY";
-        let alias = "GROK_TEST_EMPTY_ENV_LC_ALIAS";
+        let primary = "ATLAS_TEST_EMPTY_ENV_PRIMARY";
+        let alias = "ATLAS_TEST_EMPTY_ENV_LC_ALIAS";
         let _primary = EnvGuard::set(primary, "");
         let _alias = EnvGuard::set(alias, "");
         let mut model = test_model_entry("m", "https://inference.example/v1", None, None, None);
@@ -6037,8 +6037,8 @@ reasoning_effort = "low"
         use xai_chat_state::AuthType;
         use xai_grok_test_support::EnvGuard;
         let sentinel = "xai-global-sentinel-key";
-        let primary = "GROK_TEST_EMPTY_ENV_GLOBAL_PRIMARY";
-        let alias = "GROK_TEST_EMPTY_ENV_GLOBAL_ALIAS";
+        let primary = "ATLAS_TEST_EMPTY_ENV_GLOBAL_PRIMARY";
+        let alias = "ATLAS_TEST_EMPTY_ENV_GLOBAL_ALIAS";
         let _primary = EnvGuard::set(primary, "");
         let _alias = EnvGuard::set(alias, "");
         let _global = EnvGuard::set(XAI_API_KEY_ENV_VAR, sentinel);
@@ -7744,7 +7744,7 @@ reasoning_effort = "low"
         let remote_settings_default = Some("remote-settings-model");
         let resolved = resolve_string_flag(
             None,
-            "GROK_DEFAULT_MODEL_TEST_NONEXISTENT",
+            "ATLAS_DEFAULT_MODEL_TEST_NONEXISTENT",
             config_default,
             remote_settings_default,
         );
@@ -8065,19 +8065,19 @@ reasoning_effort = "low"
     /// the ambient environment. Gated behind `#[serial]`.
     fn unset_endpoint_env_vars() {
         for k in [
-            "GROK_CLI_CHAT_PROXY_BASE_URL",
-            "GROK_XAI_API_BASE_URL",
-            "GROK_FEEDBACK_BASE_URL",
-            "GROK_TRACE_UPLOAD_URL",
-            "GROK_MANAGED_CONFIG_URL",
-            "GROK_MODELS_BASE_URL",
-            "GROK_MODELS_LIST_URL",
+            "ATLAS_CLI_CHAT_PROXY_BASE_URL",
+            "ATLAS_XAI_API_BASE_URL",
+            "ATLAS_FEEDBACK_BASE_URL",
+            "ATLAS_TRACE_UPLOAD_URL",
+            "ATLAS_MANAGED_CONFIG_URL",
+            "ATLAS_MODELS_BASE_URL",
+            "ATLAS_MODELS_LIST_URL",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
             "OTEL_EXPORTER_OTLP_HEADERS",
-            "GROK_INTERNAL_OTLP_TRACES_ENDPOINT",
-            "GROK_INTERNAL_OTLP_HEADERS",
-            "GROK_EXTERNAL_OTEL",
+            "ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT",
+            "ATLAS_INTERNAL_OTLP_HEADERS",
+            "ATLAS_EXTERNAL_OTEL",
         ] {
             unsafe { std::env::remove_var(k) };
         }
@@ -8229,8 +8229,8 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_feedback_defaults_to_true_when_unset() {
-        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_FEEDBACK_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
         let cfg = Config::default();
         let r = cfg.resolve_feedback();
         assert!(r.value, "feedback should be true by default");
@@ -8239,7 +8239,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_session_recap_defaults_to_true_when_unset() {
-        unsafe { std::env::remove_var("GROK_SESSION_RECAP") };
+        unsafe { std::env::remove_var("ATLAS_SESSION_RECAP") };
         let cfg = Config::default();
         let r = cfg.resolve_session_recap();
         assert!(r.value, "session_recap should be true by default");
@@ -8248,7 +8248,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_session_recap_config_off_overrides_default() {
-        unsafe { std::env::remove_var("GROK_SESSION_RECAP") };
+        unsafe { std::env::remove_var("ATLAS_SESSION_RECAP") };
         let cfg = Config {
             features: Features {
                 session_recap: Some(false),
@@ -8263,17 +8263,17 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_session_recap_env_off_overrides_default() {
-        unsafe { std::env::set_var("GROK_SESSION_RECAP", "0") };
+        unsafe { std::env::set_var("ATLAS_SESSION_RECAP", "0") };
         let cfg = Config::default();
         let r = cfg.resolve_session_recap();
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
-        unsafe { std::env::remove_var("GROK_SESSION_RECAP") };
+        unsafe { std::env::remove_var("ATLAS_SESSION_RECAP") };
     }
     #[test]
     #[serial]
     fn resolve_session_recap_remote_off_overrides_default() {
-        unsafe { std::env::remove_var("GROK_SESSION_RECAP") };
+        unsafe { std::env::remove_var("ATLAS_SESSION_RECAP") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 session_recap: Some(false),
@@ -8293,7 +8293,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_two_pass_compaction_precedence() {
-        unsafe { std::env::remove_var("GROK_TWO_PASS_COMPACTION") };
+        unsafe { std::env::remove_var("ATLAS_TWO_PASS_COMPACTION") };
         let default_cfg = Config::default();
         let r = default_cfg.resolve_two_pass_compaction();
         assert!(!r.value, "default is opt-in off");
@@ -8322,11 +8322,11 @@ reasoning_effort = "low"
         let r = config_over_remote.resolve_two_pass_compaction();
         assert!(r.value);
         assert_eq!(r.source, ConfigSource::Config);
-        unsafe { std::env::set_var("GROK_TWO_PASS_COMPACTION", "0") };
+        unsafe { std::env::set_var("ATLAS_TWO_PASS_COMPACTION", "0") };
         let r = config_over_remote.resolve_two_pass_compaction();
         assert!(!r.value, "env wins over config + remote");
         assert_eq!(r.source, ConfigSource::Env);
-        unsafe { std::env::remove_var("GROK_TWO_PASS_COMPACTION") };
+        unsafe { std::env::remove_var("ATLAS_TWO_PASS_COMPACTION") };
     }
     /// Gate precedence: env > `[doom_loop_recovery]` > remote settings >
     /// default(off), with the remote layer merged PER-FIELD from the nested
@@ -8336,7 +8336,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_doom_loop_recovery_precedence() {
         use crate::util::config::DoomLoopRecoverySettings;
-        unsafe { std::env::remove_var("GROK_DOOM_LOOP_RECOVERY") };
+        unsafe { std::env::remove_var("ATLAS_DOOM_LOOP_RECOVERY") };
         let default_cfg = Config::default();
         assert!(
             default_cfg.resolve_doom_loop_recovery().is_none(),
@@ -8396,19 +8396,19 @@ reasoning_effort = "low"
             .expect("config on beats remote kill-switch");
         assert_eq!(p.max_threshold, 4);
         assert_eq!(p.max_retries, 3);
-        unsafe { std::env::set_var("GROK_DOOM_LOOP_RECOVERY", "0") };
+        unsafe { std::env::set_var("ATLAS_DOOM_LOOP_RECOVERY", "0") };
         assert!(
             config_over_remote.resolve_doom_loop_recovery().is_none(),
             "env wins over config + remote"
         );
-        unsafe { std::env::remove_var("GROK_DOOM_LOOP_RECOVERY") };
+        unsafe { std::env::remove_var("ATLAS_DOOM_LOOP_RECOVERY") };
     }
     /// The `[doom_loop_recovery]` TOML section deserializes through the
     /// standard config path (no bespoke parser).
     #[test]
     #[serial]
     fn doom_loop_recovery_section_parses_from_toml() {
-        unsafe { std::env::remove_var("GROK_DOOM_LOOP_RECOVERY") };
+        unsafe { std::env::remove_var("ATLAS_DOOM_LOOP_RECOVERY") };
         let raw: toml::Value = toml::from_str(
             r#"
             [doom_loop_recovery]
@@ -8429,7 +8429,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_doom_loop_recovery_clamps_tunables() {
         use crate::util::config::DoomLoopRecoverySettings;
-        unsafe { std::env::remove_var("GROK_DOOM_LOOP_RECOVERY") };
+        unsafe { std::env::remove_var("ATLAS_DOOM_LOOP_RECOVERY") };
         let cfg = Config {
             doom_loop_recovery: DoomLoopRecoverySettings {
                 enabled: Some(true),
@@ -8456,7 +8456,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_feedback_env_overrides_all() {
-        unsafe { std::env::set_var("GROK_FEEDBACK_ENABLED", "true") };
+        unsafe { std::env::set_var("ATLAS_FEEDBACK_ENABLED", "true") };
         let mut cfg = Config::default();
         cfg.features.feedback = Some(false);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8466,12 +8466,12 @@ reasoning_effort = "low"
         let r = cfg.resolve_feedback();
         assert_eq!(r.source, ConfigSource::Env);
         assert!(r.value);
-        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_FEEDBACK_ENABLED") };
     }
     #[test]
     #[serial]
     fn resolve_feedback_config_overrides_remote_settings() {
-        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_FEEDBACK_ENABLED") };
         let mut cfg = Config::default();
         cfg.features.feedback = Some(true);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8485,7 +8485,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_feedback_remote_settings_used_when_no_local() {
-        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_FEEDBACK_ENABLED") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 feedback_enabled: Some(true),
@@ -8500,8 +8500,8 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_trace_upload_disabled_when_telemetry_off_despite_remote_flag() {
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
-        unsafe { std::env::remove_var("GROK_TELEMETRY_TRACE_UPLOAD") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_TRACE_UPLOAD") };
         let mut cfg = Config::default();
         cfg.features.telemetry = Some(TelemetryMode::Disabled);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8515,8 +8515,8 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_trace_upload_explicit_config_wins_over_telemetry_off() {
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
-        unsafe { std::env::remove_var("GROK_TELEMETRY_TRACE_UPLOAD") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_TRACE_UPLOAD") };
         let mut cfg = Config::default();
         cfg.features.telemetry = Some(TelemetryMode::Disabled);
         cfg.telemetry.trace_upload = Some(true);
@@ -8535,8 +8535,8 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn trace_upload_decision_debug_reports_winning_source() {
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
-        unsafe { std::env::remove_var("GROK_TELEMETRY_TRACE_UPLOAD") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_TRACE_UPLOAD") };
         let mut cfg = Config::default();
         cfg.features.telemetry = Some(TelemetryMode::Disabled);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8558,8 +8558,8 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_trace_upload_honors_config_when_telemetry_on() {
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
-        unsafe { std::env::remove_var("GROK_TELEMETRY_TRACE_UPLOAD") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_TRACE_UPLOAD") };
         let mut cfg = Config::default();
         cfg.features.telemetry = Some(TelemetryMode::Enabled);
         cfg.telemetry.trace_upload = Some(false);
@@ -8573,7 +8573,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_goal_defaults_to_true_when_unset() {
-        unsafe { std::env::remove_var("GROK_GOAL") };
+        unsafe { std::env::remove_var("ATLAS_GOAL") };
         let cfg = Config::default();
         let r = cfg.resolve_goal();
         assert!(r.value, "goal should be on by default");
@@ -8582,7 +8582,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_goal_env_overrides_config() {
-        unsafe { std::env::set_var("GROK_GOAL", "1") };
+        unsafe { std::env::set_var("ATLAS_GOAL", "1") };
         let mut cfg = Config::default();
         cfg.goal.enabled = Some(false);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8592,12 +8592,12 @@ reasoning_effort = "low"
         let r = cfg.resolve_goal();
         assert_eq!(r.source, ConfigSource::Env);
         assert!(r.value);
-        unsafe { std::env::remove_var("GROK_GOAL") };
+        unsafe { std::env::remove_var("ATLAS_GOAL") };
     }
     #[test]
     #[serial]
     fn resolve_goal_config_overrides_remote_settings() {
-        unsafe { std::env::remove_var("GROK_GOAL") };
+        unsafe { std::env::remove_var("ATLAS_GOAL") };
         let mut cfg = Config::default();
         cfg.goal.enabled = Some(true);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8611,7 +8611,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_goal_remote_settings_used_when_no_local() {
-        unsafe { std::env::remove_var("GROK_GOAL") };
+        unsafe { std::env::remove_var("ATLAS_GOAL") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 goal_enabled: Some(true),
@@ -8628,7 +8628,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_goal_remote_settings_kill_switch_overrides_default_on() {
-        unsafe { std::env::remove_var("GROK_GOAL") };
+        unsafe { std::env::remove_var("ATLAS_GOAL") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 goal_enabled: Some(false),
@@ -8643,7 +8643,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_ask_user_question_defaults_to_true_when_unset() {
-        unsafe { std::env::remove_var("GROK_ASK_USER_QUESTION") };
+        unsafe { std::env::remove_var("ATLAS_ASK_USER_QUESTION") };
         let cfg = Config::default();
         let r = cfg.resolve_ask_user_question();
         assert!(r.value, "ask_user_question should be on by default");
@@ -8652,7 +8652,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_ask_user_question_remote_settings_enables() {
-        unsafe { std::env::remove_var("GROK_ASK_USER_QUESTION") };
+        unsafe { std::env::remove_var("ATLAS_ASK_USER_QUESTION") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 ask_user_question_enabled: Some(true),
@@ -8667,7 +8667,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_ask_user_question_env_overrides_remote_settings() {
-        unsafe { std::env::set_var("GROK_ASK_USER_QUESTION", "1") };
+        unsafe { std::env::set_var("ATLAS_ASK_USER_QUESTION", "1") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 ask_user_question_enabled: Some(false),
@@ -8678,12 +8678,12 @@ reasoning_effort = "low"
         let r = cfg.resolve_ask_user_question();
         assert_eq!(r.source, ConfigSource::Env);
         assert!(r.value);
-        unsafe { std::env::remove_var("GROK_ASK_USER_QUESTION") };
+        unsafe { std::env::remove_var("ATLAS_ASK_USER_QUESTION") };
     }
     #[test]
     #[serial]
     fn resolve_ask_user_question_config_overrides_remote_settings() {
-        unsafe { std::env::remove_var("GROK_ASK_USER_QUESTION") };
+        unsafe { std::env::remove_var("ATLAS_ASK_USER_QUESTION") };
         let mut cfg = Config::default();
         cfg.features.ask_user_question = Some(true);
         cfg.remote_settings = Some(crate::util::config::RemoteSettings {
@@ -8699,7 +8699,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_ask_user_question_remote_settings_kill_switch_overrides_default_on() {
-        unsafe { std::env::remove_var("GROK_ASK_USER_QUESTION") };
+        unsafe { std::env::remove_var("ATLAS_ASK_USER_QUESTION") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 ask_user_question_enabled: Some(false),
@@ -8714,7 +8714,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_image_gen_model_override_remote_settings_or_config() {
-        unsafe { std::env::remove_var("GROK_IMAGE_GEN_MODEL_OVERRIDE") };
+        unsafe { std::env::remove_var("ATLAS_IMAGE_GEN_MODEL_OVERRIDE") };
         let with = |config: Option<&str>, gb: Option<&str>| Config {
             features: Features {
                 image_gen_model_override: config.map(String::from),
@@ -8740,7 +8740,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn imagine_tools_disabled_gates_image_edit() {
-        unsafe { std::env::remove_var("GROK_IMAGE_EDIT") };
+        unsafe { std::env::remove_var("ATLAS_IMAGE_EDIT") };
         let with_list = |tools: Vec<&str>| Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
                 imagine_tools_disabled: Some(tools.into_iter().map(String::from).collect()),
@@ -8748,11 +8748,11 @@ reasoning_effort = "low"
             }),
             ..Default::default()
         };
-        unsafe { std::env::set_var("GROK_IMAGE_EDIT", "1") };
+        unsafe { std::env::set_var("ATLAS_IMAGE_EDIT", "1") };
         let off = with_list(vec!["image_edit"]).resolve_image_edit();
         assert!(!off.value);
         assert_eq!(off.source, ConfigSource::Remote);
-        unsafe { std::env::remove_var("GROK_IMAGE_EDIT") };
+        unsafe { std::env::remove_var("ATLAS_IMAGE_EDIT") };
         assert!(with_list(vec!["image_to_video"]).resolve_image_edit().value);
         assert!(Config::default().resolve_image_edit().value);
     }
@@ -8760,14 +8760,14 @@ reasoning_effort = "low"
     /// start from a known baseline regardless of run order.
     fn clear_goal_envs() {
         unsafe {
-            std::env::remove_var("GROK_GOAL");
-            std::env::remove_var("GROK_GOAL_CLASSIFIER");
-            std::env::remove_var("GROK_GOAL_PLANNER");
-            std::env::remove_var("GROK_GOAL_SUMMARY");
-            std::env::remove_var("GROK_GOAL_VERIFIER_N");
-            std::env::remove_var("GROK_GOAL_CLASSIFIER_MAX");
-            std::env::remove_var("GROK_GOAL_STRATEGIST_EVERY");
-            std::env::remove_var("GROK_GOAL_REVERIFY_AFTER");
+            std::env::remove_var("ATLAS_GOAL");
+            std::env::remove_var("ATLAS_GOAL_CLASSIFIER");
+            std::env::remove_var("ATLAS_GOAL_PLANNER");
+            std::env::remove_var("ATLAS_GOAL_SUMMARY");
+            std::env::remove_var("ATLAS_GOAL_VERIFIER_N");
+            std::env::remove_var("ATLAS_GOAL_CLASSIFIER_MAX");
+            std::env::remove_var("ATLAS_GOAL_STRATEGIST_EVERY");
+            std::env::remove_var("ATLAS_GOAL_REVERIFY_AFTER");
         }
     }
     fn cfg_with_goal(goal: bool) -> Config {
@@ -8855,12 +8855,12 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_classifier_env_overrides_default_and_remote() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_CLASSIFIER", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_CLASSIFIER", "0") };
         let r = cfg_with_goal_and_remote(true, remote_classifier(true))
             .resolve_goal_classifier_enabled(true);
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
-        unsafe { std::env::set_var("GROK_GOAL_CLASSIFIER", "1") };
+        unsafe { std::env::set_var("ATLAS_GOAL_CLASSIFIER", "1") };
         let r = cfg_with_goal_and_remote(false, remote_classifier(false))
             .resolve_goal_classifier_enabled(false);
         assert!(r.value);
@@ -8899,12 +8899,12 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_planner_env_overrides_default_and_remote() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_PLANNER", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_PLANNER", "0") };
         let r =
             cfg_with_goal_and_remote(true, remote_planner(true)).resolve_goal_planner_enabled(true);
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
-        unsafe { std::env::set_var("GROK_GOAL_PLANNER", "1") };
+        unsafe { std::env::set_var("ATLAS_GOAL_PLANNER", "1") };
         let r = cfg_with_goal_and_remote(false, remote_planner(false))
             .resolve_goal_planner_enabled(false);
         assert!(r.value);
@@ -8943,7 +8943,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_summary_env_overrides_default_and_remote() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_SUMMARY", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_SUMMARY", "0") };
         let r =
             cfg_with_goal_and_remote(true, remote_summary(true)).resolve_goal_summary_enabled(true);
         assert!(!r.value);
@@ -8967,7 +8967,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_classifier_env_beats_config() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_CLASSIFIER", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_CLASSIFIER", "0") };
         let r = cfg_with_goal_config(GoalConfig {
             classifier_enabled: Some(true),
             ..Default::default()
@@ -9024,7 +9024,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_planner_env_beats_config() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_PLANNER", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_PLANNER", "0") };
         let r = cfg_with_goal_config(GoalConfig {
             planner_enabled: Some(true),
             ..Default::default()
@@ -9081,7 +9081,7 @@ reasoning_effort = "low"
     #[serial]
     fn resolve_goal_summary_env_beats_config() {
         clear_goal_envs();
-        unsafe { std::env::set_var("GROK_GOAL_SUMMARY", "0") };
+        unsafe { std::env::set_var("ATLAS_GOAL_SUMMARY", "0") };
         let r = cfg_with_goal_config(GoalConfig {
             summary_enabled: Some(true),
             ..Default::default()
@@ -9150,7 +9150,7 @@ reverify_after = 6
         assert_eq!(empty.goal.classifier_enabled, None);
         assert_eq!(empty.goal.verifier_count, None);
     }
-    const GOAL_USE_CURRENT_ENV: &str = "GROK_GOAL_USE_CURRENT_MODEL_ONLY";
+    const GOAL_USE_CURRENT_ENV: &str = "ATLAS_GOAL_USE_CURRENT_MODEL_ONLY";
     fn clear_goal_model_env() {
         unsafe { std::env::remove_var(GOAL_USE_CURRENT_ENV) };
     }
@@ -9847,7 +9847,7 @@ agent_type = "cursor"
             assert_eq!(
                 cfg.resolve_otlp_traces_endpoint(),
                 "https://internal.example/traces",
-                "switch={switch}: GROK_INTERNAL_OTLP_TRACES_ENDPOINT must win verbatim (trailing / trimmed)"
+                "switch={switch}: ATLAS_INTERNAL_OTLP_TRACES_ENDPOINT must win verbatim (trailing / trimmed)"
             );
         }
     }
@@ -10041,7 +10041,7 @@ agent_type = "cursor"
             resolve_external_otel_config_with(
                 None,
                 None,
-                ext_env(&[("GROK_EXTERNAL_OTEL", "1")]),
+                ext_env(&[("ATLAS_EXTERNAL_OTEL", "1")]),
                 ext_client(),
                 false,
             )
@@ -10052,7 +10052,7 @@ agent_type = "cursor"
                 None,
                 None,
                 ext_env(&[
-                    ("GROK_EXTERNAL_OTEL", "1"),
+                    ("ATLAS_EXTERNAL_OTEL", "1"),
                     ("OTEL_METRICS_EXPORTER", "otlp"),
                 ]),
                 ext_client(),
@@ -10100,7 +10100,7 @@ agent_type = "cursor"
             resolve_external_otel_config_with(
                 Some(&effective),
                 None,
-                ext_env(&[("GROK_EXTERNAL_OTEL", "0")]),
+                ext_env(&[("ATLAS_EXTERNAL_OTEL", "0")]),
                 ext_client(),
                 false,
             )
@@ -10120,7 +10120,7 @@ agent_type = "cursor"
             resolve_external_otel_config_with(
                 None,
                 Some(&req),
-                ext_env(&[("GROK_EXTERNAL_OTEL", "1"), ("OTEL_LOGS_EXPORTER", "otlp"),]),
+                ext_env(&[("ATLAS_EXTERNAL_OTEL", "1"), ("OTEL_LOGS_EXPORTER", "otlp"),]),
                 ext_client(),
                 false,
             )
@@ -10138,7 +10138,7 @@ agent_type = "cursor"
             None,
             Some(&req),
             ext_env(&[
-                ("GROK_EXTERNAL_OTEL", "1"),
+                ("ATLAS_EXTERNAL_OTEL", "1"),
                 ("OTEL_LOGS_EXPORTER", "otlp"),
                 ("OTEL_LOG_USER_PROMPTS", "1"),
                 ("OTEL_LOG_TOOL_DETAILS", "1"),
@@ -10151,7 +10151,7 @@ agent_type = "cursor"
         assert!(!cfg.gates.log_tool_details, "requirement pin must win");
     }
     /// Regression: an org enable via `[telemetry].otel_enabled`
-    /// (managed config / requirements — no `GROK_EXTERNAL_OTEL` env var) must
+    /// (managed config / requirements — no `ATLAS_EXTERNAL_OTEL` env var) must
     /// flip the master switch the *internal* pipeline keys off, so legacy
     /// `OTEL_EXPORTER_OTLP_*` repointing shuts off in lockstep with the
     /// external stream activating. A desync would point the internally-authed
@@ -10207,7 +10207,7 @@ agent_type = "cursor"
         let cfg = resolve_external_otel_config_with(
             None,
             None,
-            ext_env(&[("GROK_EXTERNAL_OTEL", "1"), ("OTEL_LOGS_EXPORTER", "otlp")]),
+            ext_env(&[("ATLAS_EXTERNAL_OTEL", "1"), ("OTEL_LOGS_EXPORTER", "otlp")]),
             ext_client(),
             true,
         )
@@ -10219,22 +10219,22 @@ agent_type = "cursor"
     }
     fn clear_runtime_env_vars() {
         unsafe {
-            std::env::remove_var("GROK_SUBAGENTS");
-            std::env::remove_var("GROK_RESPECT_GITIGNORE");
-            std::env::remove_var("GROK_WEB_SEARCH_MODEL");
-            std::env::remove_var("GROK_SESSION_SUMMARY_MODEL");
-            std::env::remove_var("GROK_CURSOR_SKILLS_ENABLED");
-            std::env::remove_var("GROK_CURSOR_RULES_ENABLED");
-            std::env::remove_var("GROK_CURSOR_AGENTS_ENABLED");
-            std::env::remove_var("GROK_CLAUDE_SKILLS_ENABLED");
-            std::env::remove_var("GROK_CLAUDE_RULES_ENABLED");
-            std::env::remove_var("GROK_CLAUDE_AGENTS_ENABLED");
+            std::env::remove_var("ATLAS_SUBAGENTS");
+            std::env::remove_var("ATLAS_RESPECT_GITIGNORE");
+            std::env::remove_var("ATLAS_WEB_SEARCH_MODEL");
+            std::env::remove_var("ATLAS_SESSION_SUMMARY_MODEL");
+            std::env::remove_var("ATLAS_CURSOR_SKILLS_ENABLED");
+            std::env::remove_var("ATLAS_CURSOR_RULES_ENABLED");
+            std::env::remove_var("ATLAS_CURSOR_AGENTS_ENABLED");
+            std::env::remove_var("ATLAS_CLAUDE_SKILLS_ENABLED");
+            std::env::remove_var("ATLAS_CLAUDE_RULES_ENABLED");
+            std::env::remove_var("ATLAS_CLAUDE_AGENTS_ENABLED");
         }
     }
     fn clear_managed_mcp_env_vars() {
         unsafe {
-            std::env::remove_var("GROK_MANAGED_MCPS_ENABLED");
-            std::env::remove_var("GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED");
+            std::env::remove_var("ATLAS_MANAGED_MCPS_ENABLED");
+            std::env::remove_var("ATLAS_MANAGED_MCP_GATEWAY_TOOLS_ENABLED");
         }
     }
     fn isolate_compat_env() -> Vec<EnvGuard> {
@@ -10402,7 +10402,7 @@ hooks = true
     #[serial]
     fn resolve_raw_compat_sessions_load_failure_allows_env_override() {
         let _env = isolate_compat_env();
-        let _codex = EnvGuard::set("GROK_CODEX_SESSIONS_ENABLED", "true");
+        let _codex = EnvGuard::set("ATLAS_CODEX_SESSIONS_ENABLED", "true");
         let resolved = resolve_compat_sessions_from_raw(Err(()), None);
         assert!(!resolved.cursor.sessions);
         assert!(!resolved.claude.sessions);
@@ -10454,9 +10454,9 @@ hooks = true
     fn resolve_compat_env_sessions_disable_independently() {
         let _env = isolate_compat_env();
         for (vendor, env_var) in [
-            (CompatVendor::Cursor, "GROK_CURSOR_SESSIONS_ENABLED"),
-            (CompatVendor::Claude, "GROK_CLAUDE_SESSIONS_ENABLED"),
-            (CompatVendor::Codex, "GROK_CODEX_SESSIONS_ENABLED"),
+            (CompatVendor::Cursor, "ATLAS_CURSOR_SESSIONS_ENABLED"),
+            (CompatVendor::Claude, "ATLAS_CLAUDE_SESSIONS_ENABLED"),
+            (CompatVendor::Codex, "ATLAS_CODEX_SESSIONS_ENABLED"),
         ] {
             let _disabled = EnvGuard::set(env_var, "false");
             assert_session_one_disabled(
@@ -10480,8 +10480,8 @@ hooks = true
         assert!(!resolved.codex.hooks);
         assert!(resolved.cursor.hooks);
         assert!(resolved.claude.hooks);
-        let _session = EnvGuard::set("GROK_CURSOR_SESSIONS_ENABLED", "true");
-        let _hook = EnvGuard::set("GROK_CODEX_HOOKS_ENABLED", "true");
+        let _session = EnvGuard::set("ATLAS_CURSOR_SESSIONS_ENABLED", "true");
+        let _hook = EnvGuard::set("ATLAS_CODEX_HOOKS_ENABLED", "true");
         let resolved = resolve_compat_config(&config, Some(&remote));
         assert!(resolved.cursor.sessions);
         assert!(resolved.codex.hooks);
@@ -10490,7 +10490,7 @@ hooks = true
     #[serial]
     fn resolve_runtime_fields_compat_asymmetric_sources() {
         let _env = isolate_compat_env();
-        let _cursor = EnvGuard::set("GROK_CURSOR_SESSIONS_ENABLED", "false");
+        let _cursor = EnvGuard::set("ATLAS_CURSOR_SESSIONS_ENABLED", "false");
         let raw: toml::Value =
             toml::from_str("[compat.cursor]\nsessions = true\n[compat.claude]\nsessions = false")
                 .unwrap();
@@ -10662,7 +10662,7 @@ hooks = true
     #[serial]
     fn resolve_runtime_fields_gitignore_from_env() {
         clear_runtime_env_vars();
-        unsafe { std::env::set_var("GROK_RESPECT_GITIGNORE", "0") };
+        unsafe { std::env::set_var("ATLAS_RESPECT_GITIGNORE", "0") };
         let raw = empty_config();
         let mut cfg = Config::new_from_toml_cfg(&raw).unwrap();
         cfg.resolve_runtime_fields(&RuntimeResolutionContext {
@@ -10801,12 +10801,12 @@ telemetry = "garbage"
     #[test]
     #[serial]
     fn is_telemetry_explicitly_disabled_sync_env_signals() {
-        unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "0") };
+        unsafe { std::env::set_var("ATLAS_TELEMETRY_ENABLED", "0") };
         unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
         assert!(is_telemetry_explicitly_disabled_sync());
-        unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "1") };
+        unsafe { std::env::set_var("ATLAS_TELEMETRY_ENABLED", "1") };
         assert!(!is_telemetry_explicitly_disabled_sync());
-        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_TELEMETRY_ENABLED") };
         unsafe { std::env::set_var("DISABLE_TELEMETRY", "1") };
         assert!(is_telemetry_explicitly_disabled_sync());
         unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
@@ -11487,7 +11487,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_liveness_watchers_default_is_true() {
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         let r = resolve_mcp_liveness_watchers(None, None, None, None, None);
         assert!(r.value, "default-on by spec");
         assert_eq!(r.source, ConfigSource::Default);
@@ -11495,7 +11495,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_liveness_watchers_requirement_wins_over_everything() {
-        unsafe { std::env::set_var("GROK_MCP_LIVENESS_WATCHERS", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_LIVENESS_WATCHERS", "true") };
         let r = resolve_mcp_liveness_watchers(
             Some(false),
             Some(true),
@@ -11503,33 +11503,33 @@ default = "grok-4.5"
             Some(true),
             Some(true),
         );
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         assert!(!r.value, "requirement overrides every other layer");
         assert_eq!(r.source, ConfigSource::Requirement);
     }
     #[test]
     #[serial]
     fn mcp_liveness_watchers_cli_wins_over_env_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_LIVENESS_WATCHERS", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_LIVENESS_WATCHERS", "true") };
         let r =
             resolve_mcp_liveness_watchers(None, Some(false), Some(true), Some(true), Some(true));
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Cli);
     }
     #[test]
     #[serial]
     fn mcp_liveness_watchers_env_wins_over_config_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_LIVENESS_WATCHERS", "false") };
+        unsafe { std::env::set_var("ATLAS_MCP_LIVENESS_WATCHERS", "false") };
         let r = resolve_mcp_liveness_watchers(None, None, Some(true), Some(true), Some(true));
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
     }
     #[test]
     #[serial]
     fn mcp_liveness_watchers_config_wins_over_managed_and_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         let r = resolve_mcp_liveness_watchers(None, None, Some(false), Some(true), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Config);
@@ -11537,7 +11537,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_liveness_watchers_managed_wins_over_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         let r = resolve_mcp_liveness_watchers(None, None, None, Some(false), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::ManagedConfig);
@@ -11545,7 +11545,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_liveness_watchers_feature_flag_used_when_no_higher_layer() {
-        unsafe { std::env::remove_var("GROK_MCP_LIVENESS_WATCHERS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_LIVENESS_WATCHERS") };
         let r = resolve_mcp_liveness_watchers(None, None, None, None, Some(false));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Remote);
@@ -11553,7 +11553,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_auto_restart_default_is_true() {
-        unsafe { std::env::remove_var("GROK_MCP_AUTO_RESTART") };
+        unsafe { std::env::remove_var("ATLAS_MCP_AUTO_RESTART") };
         let r = resolve_mcp_auto_restart(None, None, None, None, None);
         assert!(r.value, "recovery is on by default");
         assert_eq!(r.source, ConfigSource::Default);
@@ -11561,7 +11561,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_auto_restart_requirement_wins_over_everything() {
-        unsafe { std::env::set_var("GROK_MCP_AUTO_RESTART", "false") };
+        unsafe { std::env::set_var("ATLAS_MCP_AUTO_RESTART", "false") };
         let r = resolve_mcp_auto_restart(
             Some(true),
             Some(false),
@@ -11569,23 +11569,23 @@ default = "grok-4.5"
             Some(false),
             Some(false),
         );
-        unsafe { std::env::remove_var("GROK_MCP_AUTO_RESTART") };
+        unsafe { std::env::remove_var("ATLAS_MCP_AUTO_RESTART") };
         assert!(r.value);
         assert_eq!(r.source, ConfigSource::Requirement);
     }
     #[test]
     #[serial]
     fn mcp_auto_restart_env_wins_over_config_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_AUTO_RESTART", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_AUTO_RESTART", "true") };
         let r = resolve_mcp_auto_restart(None, None, Some(false), Some(false), Some(false));
-        unsafe { std::env::remove_var("GROK_MCP_AUTO_RESTART") };
+        unsafe { std::env::remove_var("ATLAS_MCP_AUTO_RESTART") };
         assert!(r.value);
         assert_eq!(r.source, ConfigSource::Env);
     }
     #[test]
     #[serial]
     fn mcp_push_server_status_default_is_true() {
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         let r = resolve_mcp_push_server_status(None, None, None, None, None);
         assert!(r.value, "default-on by spec");
         assert_eq!(r.source, ConfigSource::Default);
@@ -11593,7 +11593,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_push_server_status_requirement_wins_over_everything() {
-        unsafe { std::env::set_var("GROK_MCP_PUSH_SERVER_STATUS", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_PUSH_SERVER_STATUS", "true") };
         let r = resolve_mcp_push_server_status(
             Some(false),
             Some(true),
@@ -11601,33 +11601,33 @@ default = "grok-4.5"
             Some(true),
             Some(true),
         );
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         assert!(!r.value, "requirement overrides every other layer");
         assert_eq!(r.source, ConfigSource::Requirement);
     }
     #[test]
     #[serial]
     fn mcp_push_server_status_cli_wins_over_env_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_PUSH_SERVER_STATUS", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_PUSH_SERVER_STATUS", "true") };
         let r =
             resolve_mcp_push_server_status(None, Some(false), Some(true), Some(true), Some(true));
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Cli);
     }
     #[test]
     #[serial]
     fn mcp_push_server_status_env_wins_over_config_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_PUSH_SERVER_STATUS", "false") };
+        unsafe { std::env::set_var("ATLAS_MCP_PUSH_SERVER_STATUS", "false") };
         let r = resolve_mcp_push_server_status(None, None, Some(true), Some(true), Some(true));
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
     }
     #[test]
     #[serial]
     fn mcp_push_server_status_config_wins_over_managed_and_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         let r = resolve_mcp_push_server_status(None, None, Some(false), Some(true), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Config);
@@ -11635,7 +11635,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_push_server_status_managed_wins_over_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         let r = resolve_mcp_push_server_status(None, None, None, Some(false), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::ManagedConfig);
@@ -11643,7 +11643,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_push_server_status_feature_flag_used_when_no_higher_layer() {
-        unsafe { std::env::remove_var("GROK_MCP_PUSH_SERVER_STATUS") };
+        unsafe { std::env::remove_var("ATLAS_MCP_PUSH_SERVER_STATUS") };
         let r = resolve_mcp_push_server_status(None, None, None, None, Some(false));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Remote);
@@ -11651,7 +11651,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_default_is_true() {
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         let r = resolve_mcp_recursive_config_watch(None, None, None, None, None);
         assert!(r.value, "default-on by spec");
         assert_eq!(r.source, ConfigSource::Default);
@@ -11659,7 +11659,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_requirement_wins_over_everything() {
-        unsafe { std::env::set_var("GROK_MCP_RECURSIVE_CONFIG_WATCH", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH", "true") };
         let r = resolve_mcp_recursive_config_watch(
             Some(false),
             Some(true),
@@ -11667,14 +11667,14 @@ default = "grok-4.5"
             Some(true),
             Some(true),
         );
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         assert!(!r.value, "requirement overrides every other layer");
         assert_eq!(r.source, ConfigSource::Requirement);
     }
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_cli_wins_over_env_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_RECURSIVE_CONFIG_WATCH", "true") };
+        unsafe { std::env::set_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH", "true") };
         let r = resolve_mcp_recursive_config_watch(
             None,
             Some(false),
@@ -11682,23 +11682,23 @@ default = "grok-4.5"
             Some(true),
             Some(true),
         );
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Cli);
     }
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_env_wins_over_config_and_below() {
-        unsafe { std::env::set_var("GROK_MCP_RECURSIVE_CONFIG_WATCH", "false") };
+        unsafe { std::env::set_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH", "false") };
         let r = resolve_mcp_recursive_config_watch(None, None, Some(true), Some(true), Some(true));
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Env);
     }
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_config_wins_over_managed_and_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         let r = resolve_mcp_recursive_config_watch(None, None, Some(false), Some(true), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Config);
@@ -11706,7 +11706,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_managed_wins_over_feature_flag() {
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         let r = resolve_mcp_recursive_config_watch(None, None, None, Some(false), Some(true));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::ManagedConfig);
@@ -11714,7 +11714,7 @@ default = "grok-4.5"
     #[test]
     #[serial]
     fn mcp_recursive_config_watch_feature_flag_used_when_no_higher_layer() {
-        unsafe { std::env::remove_var("GROK_MCP_RECURSIVE_CONFIG_WATCH") };
+        unsafe { std::env::remove_var("ATLAS_MCP_RECURSIVE_CONFIG_WATCH") };
         let r = resolve_mcp_recursive_config_watch(None, None, None, None, Some(false));
         assert!(!r.value);
         assert_eq!(r.source, ConfigSource::Remote);

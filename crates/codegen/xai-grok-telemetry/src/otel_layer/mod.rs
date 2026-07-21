@@ -15,7 +15,7 @@ use tracing_subscriber::registry::LookupSpan;
 use xai_grok_auth::AuthCredentialProvider;
 mod redact;
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
-const ENV_OTEL_FILTER: &str = "GROK_OTEL_FILTER";
+const ENV_OTEL_FILTER: &str = "ATLAS_OTEL_FILTER";
 const DEFAULT_OTEL_FILTER: &str = "info";
 /// Configuration for [`build_otel_layer`]. Encapsulates all the runtime values
 /// the layer needs that used to be reach-ins into shell-internal types
@@ -90,7 +90,7 @@ where
     let otel_filter = tracing_subscriber::filter::EnvFilter::try_new(&otel_filter)
         .unwrap_or_else(|e| {
             eprintln!(
-                "[otel] Invalid GROK_OTEL_FILTER '{}': {}. Using default '{}'.",
+                "[otel] Invalid ATLAS_OTEL_FILTER '{}': {}. Using default '{}'.",
                 otel_filter, e, DEFAULT_OTEL_FILTER
             );
             tracing_subscriber::filter::EnvFilter::try_new(DEFAULT_OTEL_FILTER)

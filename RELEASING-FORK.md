@@ -7,7 +7,7 @@ Releases, and the in-app auto-updater has been migrated to point at
 ## How releases work
 
 1. Bump the crate version in `crates/codegen/xai-grok-pager-bin/Cargo.toml`
-   (the compiled-in CLI version follows it unless `GROK_VERSION` overrides it).
+   (the compiled-in CLI version follows it unless `ATLAS_VERSION` overrides it).
 2. Tag the commit `v<version>` (for example `v0.2.101`) and push the tag.
 3. The `Release` workflow (`.github/workflows/release.yml`) builds the
    `atlas` binary with the hardened `release-dist` profile for:
@@ -28,8 +28,8 @@ A `workflow_dispatch` run builds the same artifacts without a tag (set
 - The default installer for unconfigured installs is `gh-release`
   (`crates/codegen/xai-grok-update/src/auto_update.rs`, `get_installer`).
   `internal` (upstream x.ai CDN) and `npm` remain available only when
-  explicitly selected via `installer = "..."` in `~/.grok/config.toml` or
-  `GROK_INSTALLER`.
+  explicitly selected via `installer = "..."` in `~/.atlas/config.toml` or
+  `ATLAS_INSTALLER`.
 - Version checks run `gh release list --repo nairsh/grok-build` and installs
   run `gh release download`, so every machine using auto-update needs the
   GitHub CLI (`gh`) installed and authenticated with read access to this

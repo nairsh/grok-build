@@ -44,7 +44,7 @@ Press `Ctrl+M` from the scrollback pane to open the model picker. It lists all a
 
 ### Config Default
 
-Set a persistent default in `~/.grok/config.toml`:
+Set a persistent default in `~/.atlas/config.toml`:
 
 ```toml
 [models]
@@ -71,7 +71,7 @@ To send provider-specific authentication or version headers -- for example, Anth
 
 ## Configuring Custom Models
 
-Add custom model endpoints in `~/.grok/config.toml` under `[model.<name>]` sections:
+Add custom model endpoints in `~/.atlas/config.toml` under `[model.<name>]` sections:
 
 ```toml
 [model.my-model]
@@ -96,7 +96,7 @@ Grok resolves the API key in this order:
 1. The `api_key` field in the model config
 2. The environment variable(s) named by `env_key` — a single string or an array of names. The first set, non-empty value wins (for example `env_key = ["ANTHROPIC_AUTH_TOKEN", "LC_ANTHROPIC_AUTH_TOKEN"]` for SSH `LC_*` forwarding)
 3. Your signed-in session token (from `grok login`), for a model with no `api_key`/`env_key` of its own
-4. The `XAI_API_KEY` environment variable (global fallback; Grok also accepts `GROK_CODE_XAI_API_KEY` for backward compatibility)
+4. The `XAI_API_KEY` environment variable (global fallback; Grok also accepts `ATLAS_CODE_XAI_API_KEY` for backward compatibility)
 
 ### Context Window
 
@@ -246,14 +246,14 @@ Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the de
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROK_MODELS_BASE_URL` | Yes | Base URL for inference. Grok fetches the model list from `{base_url}/models`. |
-| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer`. Grok also accepts `GROK_CODE_XAI_API_KEY`. |
-| `GROK_MODELS_LIST_URL` | No | Override the model-list URL when it differs from `{base_url}/models`. |
+| `ATLAS_MODELS_BASE_URL` | Yes | Base URL for inference. Grok fetches the model list from `{base_url}/models`. |
+| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer`. Grok also accepts `ATLAS_CODE_XAI_API_KEY`. |
+| `ATLAS_MODELS_LIST_URL` | No | Override the model-list URL when it differs from `{base_url}/models`. |
 
 ### Setup
 
 ```bash
-export GROK_MODELS_BASE_URL="https://api.acme.com/v1"
+export ATLAS_MODELS_BASE_URL="https://api.acme.com/v1"
 export XAI_API_KEY="xai-..."
 grok
 ```
@@ -289,7 +289,7 @@ web_search = "grok-4.20-multi-agent"
 Or via environment variable:
 
 ```bash
-export GROK_WEB_SEARCH_MODEL="grok-4.20-multi-agent"
+export ATLAS_WEB_SEARCH_MODEL="grok-4.20-multi-agent"
 ```
 
 If you point web search at a custom model, you also need a `[model.*]` entry so Grok can reach it. Server-side ("backend") web search runs only when the model sets `supports_backend_search = true` (and the build enables backend search); it does not depend on `api_backend`:
@@ -375,7 +375,7 @@ curl -s https://api.example.com/v1/models \
 ### Debug Logging
 
 ```bash
-RUST_LOG=debug GROK_LOG_FILE=/tmp/grok.log grok
+RUST_LOG=debug ATLAS_LOG_FILE=/tmp/grok.log grok
 tail -f /tmp/grok.log
 ```
 

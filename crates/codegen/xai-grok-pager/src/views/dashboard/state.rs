@@ -312,7 +312,7 @@ pub enum FilterValue {
 }
 
 /// Persisted dashboard configuration stored under `[dashboard]` in
-/// `~/.grok/config.toml`. Lenient — corrupted fields fall back to
+/// `~/.atlas/config.toml`. Lenient — corrupted fields fall back to
 /// defaults (edge case 12).
 ///
 /// Pinned + reorder are keyed by stable session ids (see
@@ -4428,7 +4428,7 @@ pub fn load_persisted_enabled() -> Option<bool> {
         .and_then(|v| v.as_bool())
 }
 
-/// Load the full persisted dashboard from `~/.grok/config.toml`.
+/// Load the full persisted dashboard from `~/.atlas/config.toml`.
 ///
 /// Returns `None` only when the file is missing or completely unreadable.
 /// Malformed individual fields fall back to defaults silently (edge case
@@ -4483,7 +4483,7 @@ pub fn load_persisted_from_path(path: &std::path::Path) -> Option<PersistedDashb
 /// non-empty AND unparseable, meaning we MUST NOT overwrite it (the
 /// file may contain user data we cannot interpret). Without this
 /// guard, a single dashboard pin would clobber every other table in
-/// `~/.grok/config.toml` (`[ui]`, `[hints]`, `[mcpServers]`, …).
+/// `~/.atlas/config.toml` (`[ui]`, `[hints]`, `[mcpServers]`, …).
 ///
 /// Atomic write via `<path>.dashboard.tmp.<pid>`
 /// + rename, so concurrent readers never observe a half-truncated file.
@@ -9914,22 +9914,22 @@ mod tests {
     /// Env var force-disables.
     ///
     /// Guard the env-var mutation with `serial_test`'s
-    /// per-key serial lock. The `GROK_AGENT_DASHBOARD` key means this
+    /// per-key serial lock. The `ATLAS_AGENT_DASHBOARD` key means this
     /// test runs serially with any other test that decorates itself
-    /// with `#[serial_test::serial(GROK_AGENT_DASHBOARD)]` — see the
+    /// with `#[serial_test::serial(ATLAS_AGENT_DASHBOARD)]` — see the
     /// `dispatch_open_dashboard`-calling tests in `app::dispatch`.
     /// A function-local `Mutex` would only serialize
     /// against itself; readers in other tests
     /// could still observe the transient `0` value.
-    #[serial_test::serial(GROK_AGENT_DASHBOARD)]
+    #[serial_test::serial(ATLAS_AGENT_DASHBOARD)]
     #[test]
     fn env_var_force_disables() {
         // SAFETY: the test temporarily mutates a process-wide env var.
         // `serial_test`'s lock ensures no other test marked with the
-        // same `GROK_AGENT_DASHBOARD` key reads it concurrently.
-        unsafe { std::env::set_var("GROK_AGENT_DASHBOARD", "0") };
+        // same `ATLAS_AGENT_DASHBOARD` key reads it concurrently.
+        unsafe { std::env::set_var("ATLAS_AGENT_DASHBOARD", "0") };
         assert!(!super::super::dashboard_enabled());
-        unsafe { std::env::remove_var("GROK_AGENT_DASHBOARD") };
+        unsafe { std::env::remove_var("ATLAS_AGENT_DASHBOARD") };
     }
 
     // ── Location picker ─────────────────────────────────────────────

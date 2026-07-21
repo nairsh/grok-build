@@ -254,7 +254,7 @@ impl Theme {
 
     /// Get the current theme, quantized to the terminal's color level.
     ///
-    /// Reads the active theme kind (loaded from `~/.grok/config.toml` on
+    /// Reads the active theme kind (loaded from `~/.atlas/config.toml` on
     /// first call, then cached in memory), builds the theme from its
     /// `const fn` constructor, and quantizes to the terminal's color level.
     ///
@@ -291,7 +291,7 @@ impl Theme {
         let adapted = adapted.quantized(level);
         // ANSI16 chrome fallback — fires in two cases:
         //   1. Any terminal that only advertises 16-color support
-        //      (e.g., `TERM=xterm`, `TERM=ansi`, or `GROK_FORCE_COLOR_LEVEL=basic`),
+        //      (e.g., `TERM=xterm`, `TERM=ansi`, or `ATLAS_FORCE_COLOR_LEVEL=basic`),
         //      where naive quantization collapses every dark RGB onto `Color::Black`.
         //   2. Legacy Windows ConHost below TrueColor, kept for parity with the
         //      glyph fallback path also gated on `is_legacy_windows_console()`.

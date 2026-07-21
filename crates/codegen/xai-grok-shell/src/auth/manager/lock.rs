@@ -824,7 +824,7 @@ mod tests {
     // recovery. Following the in-repo subprocess-isolation pattern
     // (`xai-crash-handler/tests/integration.rs`), the holder is this very
     // test binary re-executed via `current_exe()`, gated by the
-    // `GROK_TEST_LOCK_HOLDER` env var on an `#[ignore]`d entry-point test —
+    // `ATLAS_TEST_LOCK_HOLDER` env var on an `#[ignore]`d entry-point test —
     // no external `python3` dependency.
 
     /// Line printed to stdout once the subprocess holds the flock.
@@ -832,7 +832,7 @@ mod tests {
     const LOCK_HOLDER_READY: &str = "__GROK_LOCK_HOLDER_READY__";
 
     /// Subprocess entry point for the cross-process lock tests. Only does
-    /// anything when re-executed with `GROK_TEST_LOCK_HOLDER` set; a normal
+    /// anything when re-executed with `ATLAS_TEST_LOCK_HOLDER` set; a normal
     /// `cargo test` run sees the env var absent and returns immediately
     /// (it is `#[ignore]`d anyway).
     ///
@@ -846,7 +846,7 @@ mod tests {
     #[test]
     #[ignore = "spawned as a subprocess by the cross-process lock tests"]
     fn subprocess_lock_holder() {
-        let Ok(spec) = std::env::var("GROK_TEST_LOCK_HOLDER") else {
+        let Ok(spec) = std::env::var("ATLAS_TEST_LOCK_HOLDER") else {
             return; // normal test run — not a subprocess invocation
         };
         let mut parts = spec.splitn(3, '|');
@@ -910,7 +910,7 @@ mod tests {
         let exe = std::env::current_exe().expect("current_exe");
         let spec = format!("{}|{mode}|{age_secs}", lock_path.to_str().unwrap());
         let mut child = std::process::Command::new(exe)
-            .env("GROK_TEST_LOCK_HOLDER", spec)
+            .env("ATLAS_TEST_LOCK_HOLDER", spec)
             .args([
                 "--ignored",
                 "--exact",

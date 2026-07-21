@@ -4,7 +4,7 @@
 //! start below that floor. With auto-update on, we install
 //! `max(latest, minimum)`; otherwise the user is asked to run `grok update`.
 //!
-//! Set `GROK_TEST_VERSION` to manually exercise either path without producing
+//! Set `ATLAS_TEST_VERSION` to manually exercise either path without producing
 //! a real out-of-date build.
 
 use crate::auto_update::{get_installer, run_install_script};
@@ -45,20 +45,20 @@ pub(crate) enum MinimumVersionError {
         source: semver::Error,
     },
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Atlas ({current}) is no longer supported. \
          Run `grok update` to install version {minimum} or later."
     )]
     AutoUpdateDisabled { current: String, minimum: String },
     /// `npm` / `gh` / `internal` GCS — none detected.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Atlas ({current}) is no longer supported. \
          Run `grok update` to install version {minimum} or later."
     )]
     NoInstaller { current: String, minimum: String },
     /// `detail` is telemetry-only; omitted from `Display` to avoid stacking
     /// the installer's own action language.
     #[error(
-        "This version of Grok ({current}) is no longer supported, \
+        "This version of Atlas ({current}) is no longer supported, \
          and the update to version {minimum} didn't complete.\n\n\
          Run `grok update` to try again."
     )]
@@ -70,7 +70,7 @@ pub(crate) enum MinimumVersionError {
     /// Latest release is known but still below the floor (vs `NoReleaseFound`,
     /// which couldn't probe at all).
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Atlas ({current}) is no longer supported. \
          Version {minimum} or later is required, but the most recent release is {latest}. \
          Contact your administrator."
     )]
@@ -81,7 +81,7 @@ pub(crate) enum MinimumVersionError {
     },
     /// Couldn't probe the registry — likely transient.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Atlas ({current}) is no longer supported. \
          Version {minimum} or later is required, but no release was found. \
          Check your network connection, or contact your administrator."
     )]
@@ -219,7 +219,7 @@ async fn enforce_minimum_version(
 
     info!(%current, %target, installer, "minimum_version: installing upgrade");
     eprintln!(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of Atlas ({current}) is no longer supported. \
          Updating to {target}…"
     );
 
@@ -262,7 +262,7 @@ async fn enforce_minimum_version(
 /// Single chokepoint for the pager + tui startup paths. Re-execs after a
 /// floor-driven install. Prints + exits non-zero on `Err`.
 ///
-/// `GROK_TEST_VERSION` lets devs override the running version to skip
+/// `ATLAS_TEST_VERSION` lets devs override the running version to skip
 /// enforcement on a `cargo run` build.
 pub async fn enforce_minimum_version_or_exit(update_config: &UpdateConfig) {
     let min = match resolve_floor_or_error() {
@@ -365,10 +365,10 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn version_env_var_flows_through_to_decision() {
-        let saved = std::env::var("GROK_TEST_VERSION").ok();
+        let saved = std::env::var("ATLAS_TEST_VERSION").ok();
 
         // SAFETY: #[serial] excludes other env-touching tests.
-        unsafe { std::env::set_var("GROK_TEST_VERSION", "0.1.50") };
+        unsafe { std::env::set_var("ATLAS_TEST_VERSION", "0.1.50") };
         let decision =
             evaluate_minimum_version(&get_installed_grok_version(), Some("0.1.100")).unwrap();
         assert!(matches!(
@@ -377,8 +377,8 @@ mod tests {
         ));
 
         match saved {
-            Some(v) => unsafe { std::env::set_var("GROK_TEST_VERSION", v) },
-            None => unsafe { std::env::remove_var("GROK_TEST_VERSION") },
+            Some(v) => unsafe { std::env::set_var("ATLAS_TEST_VERSION", v) },
+            None => unsafe { std::env::remove_var("ATLAS_TEST_VERSION") },
         }
     }
 }

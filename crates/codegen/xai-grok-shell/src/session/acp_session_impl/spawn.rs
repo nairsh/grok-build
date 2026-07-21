@@ -385,7 +385,7 @@ pub(crate) async fn spawn_session_actor(
         },
         |mc| mc.pruning.clone(),
     );
-    let context_window_override = std::env::var("GROK_DEBUG_CONTEXT_WINDOW")
+    let context_window_override = std::env::var("ATLAS_DEBUG_CONTEXT_WINDOW")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .and_then(std::num::NonZeroU64::new);
@@ -398,7 +398,7 @@ pub(crate) async fn spawn_session_actor(
         tracing::warn!(
             override_context_window = cw.get(),
             original_context_window = baseline_context_window.get(),
-            "GROK_DEBUG_CONTEXT_WINDOW override active"
+            "ATLAS_DEBUG_CONTEXT_WINDOW override active"
         );
     }
     let chat_state_sampling_config = xai_grok_sampling_types::SamplingConfig {
