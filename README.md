@@ -1,20 +1,16 @@
 <div align="center">
 
 <h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://media.x.ai/v1/website/spacexai-symbol-white-transparent-0c31957f.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png">
-    <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
-  </picture>
-  <br>
-  Grok Build (<code>grok</code>)
+  Atlas (<code>atlas</code>)
 </h1>
 
-**Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
-full-screen TUI that understands your codebase, edits files, executes shell
-commands, searches the web, and manages long-running tasks — interactively,
-headlessly for scripting/CI, or embedded in editors via the Agent Client
-Protocol (ACP).
+**Atlas** is a terminal-based AI coding agent, forked from xAI's Grok Build.
+It runs as a full-screen TUI that understands your codebase, edits files,
+executes shell commands, searches the web, and manages long-running tasks —
+interactively, headlessly for scripting/CI, or embedded in editors via the
+Agent Client Protocol (ACP). Atlas is an independent fork: it does not share
+data, configuration, or infrastructure with a Grok Build install, and it is
+not affiliated with or supported by xAI/SpaceXAI.
 
 [Installing the released binary](#installing-the-released-binary) ·
 [Building from source](#building-from-source) ·
@@ -24,15 +20,13 @@ Protocol (ACP).
 [Contributing](#contributing) ·
 [License](#license)
 
-![Grok Build TUI](https://media.x.ai/v1/website/universe-tui-screenshot-6f7a0837.png)
-
-**Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
-
-This repository contains the Rust source for the `grok` CLI/TUI and its agent
-runtime. It is synced periodically from the SpaceXAI monorepo.
+This repository contains the Rust source for the `atlas` CLI/TUI and its agent
+runtime, forked from xAI's SpaceXAI monorepo. See
+[`RELEASING-FORK.md`](RELEASING-FORK.md) for how this fork's releases and
+auto-updater differ from upstream Grok Build.
 
 A small `SOURCE_REV` file at the root records the full monorepo commit SHA
-for the version of the code present in this tree.
+of the upstream Grok Build tree this fork last synced from.
 
 </div>
 
@@ -40,16 +34,19 @@ for the version of the code present in this tree.
 
 ## Installing the released binary
 
-Prebuilt binaries are published for macOS, Linux, and Windows:
+Prebuilt binaries for this fork are published as GitHub Releases on this
+repository (see [`RELEASING-FORK.md`](RELEASING-FORK.md) for how they're
+built and how the in-app updater fetches them):
 
 ```sh
-curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
-irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
-grok --version
+gh release download --repo <this-repo> --pattern 'grok-*' --output atlas
+chmod +x atlas
+./atlas --version
 ```
 
-See the [changelog](https://x.ai/build/changelog) for the latest fixes,
-features, and improvements in each release.
+Release notes for this fork live in-tree per crate (for example
+[`crates/codegen/xai-grok-shell/CHANGELOG.md`](crates/codegen/xai-grok-shell/CHANGELOG.md)),
+not at upstream's `x.ai/build/changelog`.
 
 ## Building from source
 
@@ -89,8 +86,11 @@ and the [authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-
 
 ## Documentation
 
-Full online documentation is available at
-[docs.x.ai/build/overview](https://docs.x.ai/build/overview).
+Upstream Grok Build's hosted docs at
+[docs.x.ai/build/overview](https://docs.x.ai/build/overview) describe most of
+the shared behavior, but they document the upstream product, not this fork —
+where this fork differs (installer, updater, config paths, auth), defer to
+the in-tree guide and [`RELEASING-FORK.md`](RELEASING-FORK.md).
 
 The user guide ships with the pager crate:
 [`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
@@ -101,7 +101,7 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 | Path | Contents |
 |------|----------|
-| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
+| `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `atlas` binary |
 | `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
 | `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
 | `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |
