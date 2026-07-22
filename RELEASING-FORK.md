@@ -11,10 +11,9 @@ Releases, and the in-app auto-updater has been migrated to point at
 2. Tag the commit `v<version>` (for example `v0.2.101`) and push the tag.
 3. The `Release` workflow (`.github/workflows/release.yml`) builds the
    `atlas` binary with the hardened `release-dist` profile for:
-   - `macos-aarch64`, `macos-x86_64`
-   - `windows-x86_64`
-   (Linux builds are intentionally omitted; commented templates remain in
-   the workflow matrix.)
+   - `macos-aarch64`
+   (macOS Intel, Linux, and Windows builds are intentionally omitted; a
+   commented note remains in the workflow matrix.)
 4. It publishes a GitHub Release tagged `v<version>` whose assets are named
    `grok-<version>-<os>-<arch>` — the exact names the auto-updater downloads.
 

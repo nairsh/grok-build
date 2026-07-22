@@ -417,6 +417,7 @@ fn resolve_hunk_tracker_mode(
         .map(str::to_owned)
 }
 
+#[cfg(test)]
 fn has_connected_provider(
     config: &xai_grok_shell::agent::config::Config,
     has_session_auth: bool,
@@ -557,18 +558,10 @@ pub async fn run(
         .unwrap_or_default();
     xai_grok_shell::agent::provider_catalog::prepare_connected_providers().await;
     let refreshed_auth = xai_grok_shell::auth::try_ensure_fresh_auth(&grok_com_config).await;
-    if let Some(config) = startup_config.as_ref()
-        && !has_connected_provider(
-            config,
-            refreshed_auth.is_some(),
-            xai_grok_shell::agent::auth_method::has_xai_api_key_env(),
-        )
-    {
-        anyhow::bail!(
-            "No provider is connected.\n\
-             Run `atlas login` to connect a provider before starting Atlas."
-        );
-    }
+    // No provider connected is not fatal here: the ACP connection below
+    // independently computes `needs_login` and the welcome screen shows the
+    // interactive login menu (`AuthState::Pending`) in that case, so Atlas
+    // still starts and lets the user log in without leaving the TUI.
     let early_prefetch =
         xai_grok_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
     xai_grok_shell::agent::mvp_agent::warm_async_http_client();

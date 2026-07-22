@@ -36,10 +36,7 @@ jobs:
             runner: macos-14
             target: aarch64-apple-darwin
           # macOS Intel (x86_64) omitted: team uses Apple Silicon only.
-          # Linux builds omitted: not needed by this team.
-          - platform: windows-x86_64
-            runner: windows-2022
-            target: x86_64-pc-windows-msvc
+          # Linux and Windows builds omitted: not needed by this team.
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -66,16 +63,9 @@ jobs:
         # Same protoc version the repo pins in bin/protoc (a dotslash wrapper
         # that CI cannot execute). xai-grok-tools-api's build.rs honors $PROTOC.
         run: |
-          case "${{ matrix.platform }}" in
-            macos-aarch64) pkg=protoc-29.3-osx-aarch_64.zip; exe=protoc ;;
-            windows-x86_64) pkg=protoc-29.3-win64.zip; exe=protoc.exe ;;
-          esac
-          # Git Bash tar misreads "D:\..." as a remote host; use a POSIX path
-          # for shell operations and keep the native path for cargo's $PROTOC.
+          pkg=protoc-29.3-osx-aarch_64.zip
+          exe=protoc
           tmp="$RUNNER_TEMP"
-          if command -v cygpath >/dev/null 2>&1; then
-            tmp="$(cygpath -u "$RUNNER_TEMP")"
-          fi
           curl -fsSL -o "$tmp/protoc.zip" \
             "https://github.com/protocolbuffers/protobuf/releases/download/v29.3/${pkg}"
           tar -xf "$tmp/protoc.zip" -C "$tmp"
@@ -107,13 +97,8 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           asset="grok-${version}-${{ matrix.platform }}"
           mkdir -p dist
-          if [[ "${{ matrix.platform }}" == windows-* ]]; then
-            cp "target/${{ matrix.target }}/release-dist/atlas.exe" "dist/${asset}"
-            cp "target/${{ matrix.target }}/release-dist/atlas.exe" "dist/${asset}.exe"
-          else
-            cp "target/${{ matrix.target }}/release-dist/atlas" "dist/${asset}"
-            chmod +x "dist/${asset}"
-          fi
+          cp "target/${{ matrix.target }}/release-dist/atlas" "dist/${asset}"
+          chmod +x "dist/${asset}"
 
       - uses: actions/upload-artifact@v4
         with:

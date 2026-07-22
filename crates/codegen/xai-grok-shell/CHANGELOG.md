@@ -1,5 +1,16 @@
 # Changelog
 
+# 0.2.102 — 2026-07-22
+
+## Features
+
+- **Amazon Bedrock** is now a built-in provider (`AWS_BEARER_TOKEN_BEDROCK`), via Bedrock's OpenAI-compatible `bedrock-runtime` endpoint. Auto-seeds Claude Sonnet 4.6, Opus 4.6, and Haiku 4.5.
+
+## Bug Fixes
+
+- **Atlas no longer refuses to start** when no provider is connected — it now shows the interactive login screen instead of exiting with "Run `atlas login`".
+- **Claude Agent SDK login detection** now checks the macOS Keychain, not just the Linux credentials file, so it correctly recognizes an already-logged-in `claude` CLI on a Mac.
+
 # 0.2.101 — 2026-07-13
 
 ## Features

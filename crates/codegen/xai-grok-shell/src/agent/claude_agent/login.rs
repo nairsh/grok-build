@@ -58,11 +58,39 @@ pub fn status_hint(status: &HarnessStatus) -> String {
 /// as `Ready` — the definitive check is the first turn (an auth failure there
 /// surfaces the login hint). This mirrors how the harness itself defers auth
 /// validation to request time.
+///
+/// On macOS, `claude login` stores credentials in the login Keychain (service
+/// `Claude Code-credentials`), not in `~/.claude/.credentials.json` — that file
+/// only exists on Linux. So the file probe alone always reads as
+/// `NotLoggedIn` on a Mac even when the user is already logged in; the Keychain
+/// is checked as a fallback there.
 pub fn detect() -> HarnessStatus {
-    detect_with(
+    let status = detect_with(
         |name| which_on_path(name),
         |dir| dir.join(".claude").join(".credentials.json").exists(),
-    )
+    );
+    if matches!(status, HarnessStatus::NotLoggedIn) && has_macos_keychain_credential() {
+        HarnessStatus::Ready
+    } else {
+        status
+    }
+}
+
+/// Whether the macOS login Keychain has a `Claude Code-credentials` item.
+/// Shells out to `security` (no keychain-access crate in the dependency
+/// closure); a missing binary or lookup failure is treated as absent.
+#[cfg(target_os = "macos")]
+fn has_macos_keychain_credential() -> bool {
+    std::process::Command::new("/usr/bin/security")
+        .args(["find-generic-password", "-s", "Claude Code-credentials"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn has_macos_keychain_credential() -> bool {
+    false
 }
 
 /// Testable core of [`detect`] with injected PATH lookup and credential probe.

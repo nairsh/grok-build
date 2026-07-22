@@ -1,6 +1,6 @@
 # Providers and Connections
 
-Atlas is multi-provider. Beyond the built-in xAI models, it includes 26
+Atlas is multi-provider. Beyond the built-in xAI models, it includes 27
 API-key provider presets plus arbitrary OpenAI/Anthropic-compatible endpoints.
 Claude Pro/Max and ChatGPT (Codex) subscription login are also supported.
 
@@ -69,6 +69,7 @@ Built-in API-key connections:
 |---|---|
 | `openai`, `anthropic`, `openrouter`, `litellm` | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `LITELLM_API_KEY` |
 | `google`, `deepseek`, `groq`, `cerebras`, `nvidia` | `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `NVIDIA_API_KEY` |
+| `bedrock` | `AWS_BEARER_TOKEN_BEDROCK` |
 | `zai`, `zai-coding-cn`, `mistral` | `ZAI_API_KEY`, `ZAI_CODING_CN_API_KEY`, `MISTRAL_API_KEY` |
 | `minimax`, `minimax-cn` | `MINIMAX_API_KEY`, `MINIMAX_CN_API_KEY` |
 | `moonshotai`, `moonshotai-cn`, `kimi-coding` | `MOONSHOT_API_KEY`, `MOONSHOT_API_KEY`, `KIMI_API_KEY` |
@@ -83,9 +84,27 @@ precedence.
 
 The preset registry is adapted from Pi's provider catalog. Atlas currently
 ports providers that fit its Responses, Chat Completions, or Anthropic Messages
-adapters. Amazon Bedrock, Google Vertex, Azure OpenAI Responses, Cloudflare's
-account-scoped endpoints, and native provider transports remain separate
-follow-up work rather than being advertised as compatible presets.
+adapters. Google Vertex, Azure OpenAI Responses, Cloudflare's account-scoped
+endpoints, and other native provider transports remain separate follow-up work
+rather than being advertised as compatible presets.
+
+Amazon Bedrock is included via its OpenAI-compatible `bedrock-runtime`
+endpoint (`/v1/chat/completions`), not the native Converse/InvokeModel API —
+that avoids needing SigV4 request signing. Auth is an [Amazon Bedrock API
+key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) sent
+as a bearer token via `AWS_BEARER_TOKEN_BEDROCK`. The preset defaults to
+`us-east-1`; for another region, add a `[connection.bedrock]` block in
+`~/.atlas/config.toml` with a `base_url` pointing at that region's
+`bedrock-runtime` endpoint (same id, so it overrides the built-in).
+
+Unlike every other built-in preset (which seeds a single default model),
+Bedrock auto-seeds three Claude models to `/model` as soon as
+`AWS_BEARER_TOKEN_BEDROCK` is set: `us.anthropic.claude-sonnet-4-6`,
+`us.anthropic.claude-opus-4-6`, and `us.anthropic.claude-haiku-4-5`. Add your
+own `[model.*]` blocks against the `bedrock` connection to reach other Bedrock
+model ids instead (see [Defining your own
+connection](#defining-your-own-connection)); any explicit model on the
+connection suppresses this curated seeding.
 
 LiteLLM Proxy is included as an OpenAI-compatible preset (`http://localhost:4000/v1` by
 default, and `/login litellm` lets you override it). When adding LiteLLM or another OpenAI-compatible custom endpoint,

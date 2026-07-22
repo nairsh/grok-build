@@ -3322,6 +3322,7 @@ fn add_builtin_connection_models(cfg: &Config, resolved: &mut IndexMap<String, M
     };
     add_builtin_api_key_models_with_store(cfg, resolved, &store);
     add_builtin_subscription_models_with_store(cfg, resolved, &store);
+    add_builtin_bedrock_models_with_store(cfg, resolved, &store);
 }
 
 /// Seed one useful model for every built-in API-key provider whose conventional
@@ -3335,6 +3336,12 @@ fn add_builtin_api_key_models_with_store(
 ) {
     let builtins = crate::agent::connection::builtin_connections();
     for preset in crate::agent::connection::api_key_provider_presets() {
+        // Bedrock hosts several Claude models worth surfacing at once, unlike
+        // the single-default-model shape this loop seeds for every other
+        // preset. It gets its own curated multi-model seeder below instead.
+        if preset.id == "bedrock" {
+            continue;
+        }
         // A connection with explicit `[model.*]` entries has an authoritative
         // catalog (for example, LiteLLM's `/v1/models` response). Do not add
         // the preset's generic fallback alongside it: that model may not
@@ -3456,6 +3463,51 @@ fn add_builtin_openai_subscription_model(
         entry.info.reasoning_efforts = codex_fallback_reasoning_efforts();
         entry.info.reasoning_effort = Some(ReasoningEffort::Medium);
         entry.info.supports_reasoning_effort = true;
+        resolved.insert(catalog_id, entry);
+    }
+}
+
+/// Curated Claude-on-Bedrock lineup for the `bedrock` connection. Unlike
+/// every other API-key preset (one seeded default model), Bedrock gets three
+/// so `/model` is useful without hand-written `[model.*]` blocks.
+fn add_builtin_bedrock_models_with_store(
+    cfg: &Config,
+    resolved: &mut IndexMap<String, ModelEntry>,
+    store: &crate::agent::credential_store::CredentialStore,
+) {
+    const MODELS: &[(&str, &str)] = &[
+        ("us.anthropic.claude-sonnet-4-6", "Claude Sonnet 4.6"),
+        ("us.anthropic.claude-opus-4-6", "Claude Opus 4.6"),
+        ("us.anthropic.claude-haiku-4-5", "Claude Haiku 4.5"),
+    ];
+
+    if has_explicit_models_for_connection(cfg, "bedrock") {
+        return;
+    }
+
+    let builtins = crate::agent::connection::builtin_connections();
+    let Some(connection) =
+        crate::agent::connection::resolve_connection(&cfg.connections, "bedrock", &builtins)
+    else {
+        return;
+    };
+
+    for &(model_id, name) in MODELS {
+        let catalog_id = format!("bedrock/{model_id}");
+        if resolved.contains_key(&catalog_id) {
+            continue;
+        }
+        let mut entry = ModelEntry::fallback(model_id, &cfg.endpoints);
+        connection.apply_as_base_with_store(&mut entry, store);
+        if !entry.has_own_credentials() {
+            // No credential material at all -- none of the other Bedrock
+            // models would have any either, so stop instead of inserting
+            // three unusable entries.
+            return;
+        }
+        entry.info.name = Some(format!("Amazon Bedrock · {name}"));
+        entry.info.description = Some(format!("{name} via Amazon Bedrock"));
+        entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
         resolved.insert(catalog_id, entry);
     }
 }

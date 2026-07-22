@@ -271,8 +271,11 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
 
 /// API-key providers ported from Pi's provider registry that are compatible
 /// with Atlas's current adapters. Providers that need a distinct transport
-/// (Bedrock Converse, native Gemini/Vertex, Azure Responses) are deliberately
-/// excluded instead of being presented as working connections.
+/// (native Gemini/Vertex, Azure Responses) are deliberately excluded instead
+/// of being presented as working connections. Amazon Bedrock is included via
+/// its OpenAI-compatible `bedrock-runtime` endpoint rather than the native
+/// Converse/InvokeModel API, which would need SigV4 signing and its own wire
+/// format — see the `bedrock` preset below.
 pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
     fn openai_compatible(
         id: &'static str,
@@ -371,6 +374,20 @@ pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
             "https://generativelanguage.googleapis.com/v1beta/openai",
             "GEMINI_API_KEY",
             "gemini-3.1-pro-preview",
+        ),
+        // Amazon Bedrock's `bedrock-runtime` OpenAI-compatible endpoint (not the
+        // native Converse/InvokeModel API, which needs SigV4 signing and its own
+        // wire format). Auth is a Bedrock API key sent as a bearer token via
+        // `AWS_BEARER_TOKEN_BEDROCK` — see "Create and manage Amazon Bedrock API
+        // keys" in the AWS docs. The endpoint is region-scoped; this defaults to
+        // us-east-1, override via a user `[connection.bedrock]` base_url for
+        // another region.
+        openai_compatible(
+            "bedrock",
+            "Amazon Bedrock",
+            "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "us.anthropic.claude-sonnet-4-6",
         ),
         openai_compatible(
             "groq",
@@ -724,7 +741,7 @@ mod tests {
     #[test]
     fn api_key_presets_are_unique_and_routable() {
         let presets = api_key_provider_presets();
-        assert_eq!(presets.len(), 26);
+        assert_eq!(presets.len(), 27);
         let mut ids = std::collections::HashSet::new();
         for preset in presets {
             assert!(ids.insert(preset.id), "duplicate provider id {}", preset.id);
@@ -751,6 +768,16 @@ mod tests {
             .find(|preset| preset.id == "fireworks")
             .expect("Fireworks preset should be registered");
         assert_eq!(fireworks.connection.auth_scheme, Some(AuthScheme::Bearer));
+        let bedrock = api_key_provider_presets()
+            .into_iter()
+            .find(|preset| preset.id == "bedrock")
+            .expect("Amazon Bedrock preset should be registered");
+        assert_eq!(bedrock.env_key, "AWS_BEARER_TOKEN_BEDROCK");
+        assert_eq!(bedrock.connection.adapter, Some(ApiBackend::ChatCompletions));
+        assert_eq!(
+            bedrock.connection.base_url.as_deref(),
+            Some("https://bedrock-runtime.us-east-1.amazonaws.com/v1")
+        );
     }
 
     #[derive(Deserialize)]
