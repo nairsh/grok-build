@@ -80,8 +80,11 @@ jobs:
         shell: bash
         env:
           # Compiled-in version must match the release tag so the updater's
-          # installed-vs-latest comparison is consistent.
-          GROK_VERSION: ${{ steps.version.outputs.version }}
+          # installed-vs-latest comparison is consistent. Read by build.rs in
+          # xai-grok-version, xai-grok-pager-bin, xai-grok-pager, and by the
+          # folder_trust_inert() release-vs-dev-build check — must be
+          # ATLAS_VERSION, not the pre-rebrand GROK_VERSION name.
+          ATLAS_VERSION: ${{ steps.version.outputs.version }}
         # Mirrors the documented distribution build: hardened release-dist
         # profile plus the release-dist feature gate (see [profile.release-dist]
         # in Cargo.toml).
