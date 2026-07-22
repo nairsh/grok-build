@@ -30,9 +30,9 @@ impl SlashCommand for LoginCommand {
         let mut items = vec![
             item("xai", "xAI / Grok subscription", "Browser or device login"),
             item(
-                "anthropic-subscription",
-                "Claude Pro/Max subscription",
-                "Browser login",
+                "claude-agent",
+                "Claude (Agent SDK — subscription)",
+                "Runs `claude login` (Claude Agent SDK)",
             ),
             item("openai-codex", "ChatGPT Plus/Pro (Codex)", "Browser login"),
             item(

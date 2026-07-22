@@ -273,14 +273,14 @@ impl AuthManager {
                 "scope": &scope,
                 "grok_home": grok_home.display().to_string(),
                 "HOME": std::env::var("HOME").unwrap_or_else(|_| "(unset)".into()),
-                "GROK_HOME": std::env::var("GROK_HOME").unwrap_or_else(|_| "(unset)".into()),
-                "GROK_AUTH_PATH": std::env::var("GROK_AUTH_PATH").unwrap_or_else(|_| "(unset)".into()),
-                "GROK_AUTH": std::env::var("GROK_AUTH").map(|_| "(set)".to_string()).unwrap_or_else(|_| "(unset)".into()),
+                "ATLAS_HOME": std::env::var("ATLAS_HOME").unwrap_or_else(|_| "(unset)".into()),
+                "ATLAS_AUTH_PATH": std::env::var("ATLAS_AUTH_PATH").unwrap_or_else(|_| "(unset)".into()),
+                "ATLAS_AUTH": std::env::var("ATLAS_AUTH").map(|_| "(set)".to_string()).unwrap_or_else(|_| "(unset)".into()),
             })),
         );
 
-        // GROK_AUTH: inline JSON credentials (highest priority, read-only).
-        if let Ok(inline_json) = std::env::var("GROK_AUTH") {
+        // ATLAS_AUTH: inline JSON credentials (highest priority, read-only).
+        if let Ok(inline_json) = std::env::var("ATLAS_AUTH") {
             if let Ok(auth) = serde_json::from_str::<GrokAuth>(&inline_json) {
                 return Self::assemble(
                     Some(auth),
@@ -291,11 +291,11 @@ impl AuthManager {
                     None,
                 );
             }
-            tracing::warn!("GROK_AUTH set but failed to parse as JSON, falling back to file");
+            tracing::warn!("ATLAS_AUTH set but failed to parse as JSON, falling back to file");
         }
 
-        // GROK_AUTH_PATH: custom file path (overrides default $GROK_HOME/auth.json).
-        let path = std::env::var("GROK_AUTH_PATH")
+        // ATLAS_AUTH_PATH: custom file path (overrides default $ATLAS_HOME/auth.json).
+        let path = std::env::var("ATLAS_AUTH_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| grok_home.join("auth.json"));
 
@@ -376,7 +376,7 @@ impl AuthManager {
     }
 
     /// Single field-assembly point for [`Self::new`]'s two construction paths
-    /// (inline `GROK_AUTH` vs. on-disk `auth.json`), which differ only in the
+    /// (inline `ATLAS_AUTH` vs. on-disk `auth.json`), which differ only in the
     /// threaded fields. One literal means a newly added field can't be silently
     /// dropped from one branch.
     fn assemble(
@@ -1163,7 +1163,7 @@ impl AuthManager {
             "is_expired": auth.map(is_expired),
         });
         match new_state {
-            // Recovery (or first observation in GROK_AUTH mode).
+            // Recovery (or first observation in ATLAS_AUTH mode).
             DiskAuthState::Ok => {
                 xai_grok_telemetry::unified_log::info(
                     "auth disk state: entry present",

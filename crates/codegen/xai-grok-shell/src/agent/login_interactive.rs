@@ -57,8 +57,12 @@ pub async fn run_provider_login(config: &Config, provider: &str) -> anyhow::Resu
         "xai" | "grok" | "grok.com" => {
             crate::auth::run_cli_login(config, false, false, false).await
         }
-        "claude" | "claude-subscription" | "anthropic-subscription" => {
-            subscription_login(SubscriptionProvider::Anthropic).await
+        "claude" | "claude-subscription" | "anthropic-subscription" | "claude-agent" => {
+            // The reverse-engineered Anthropic OAuth flow is retired. Claude
+            // Pro/Max now runs through the Claude Agent SDK harness, whose auth
+            // is delegated to `claude login` — print guidance instead of driving
+            // an OAuth flow Atlas no longer owns.
+            claude_agent_login_guidance()
         }
         "chatgpt" | "codex" | "openai-codex" => {
             subscription_login(SubscriptionProvider::OpenAiCodex).await
@@ -84,13 +88,13 @@ pub async fn run_provider_login(config: &Config, provider: &str) -> anyhow::Resu
 async fn subscription_menu(config: &Config) -> anyhow::Result<()> {
     println!("\nSubscriptions\n");
     println!("  1) xAI / Grok");
-    println!("  2) Claude Pro/Max");
+    println!("  2) Claude (Agent SDK — subscription)");
     println!("  3) ChatGPT Plus/Pro (Codex)");
     println!("  4) GitHub Copilot");
     println!("  q) Cancel\n");
     match prompt_line("Enter choice: ").await?.trim() {
         "1" => crate::auth::run_cli_login(config, false, false, false).await,
-        "2" => subscription_login(SubscriptionProvider::Anthropic).await,
+        "2" => claude_agent_login_guidance(),
         "3" => subscription_login(SubscriptionProvider::OpenAiCodex).await,
         "4" => copilot_not_yet_available(),
         "q" | "Q" | "" => {
@@ -106,6 +110,20 @@ fn copilot_not_yet_available() -> anyhow::Result<()> {
         "GitHub Copilot's device-code transport is not implemented yet; \
          use another provider for now"
     )
+}
+
+/// Guide the user to authenticate the Claude Agent SDK harness. Auth is owned by
+/// the `claude` runtime, not Atlas — so we print its status and the `claude
+/// login` command rather than driving an OAuth flow ourselves.
+fn claude_agent_login_guidance() -> anyhow::Result<()> {
+    use crate::agent::claude_agent::login;
+    let status = login::detect();
+    println!("\nClaude Agent SDK\n");
+    println!("  {}", login::status_hint(&status));
+    if !matches!(status, login::HarnessStatus::Ready) {
+        println!("\n  Then select a model on the `claude-agent` connection.");
+    }
+    Ok(())
 }
 
 async fn api_key_menu() -> anyhow::Result<()> {

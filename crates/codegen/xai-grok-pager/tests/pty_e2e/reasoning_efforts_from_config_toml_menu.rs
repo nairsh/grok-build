@@ -15,9 +15,9 @@ async fn reasoning_efforts_from_config_toml_menu() {
     .expect("start content");
     content.set_response(format!("{MOCK_RESPONSE_SENTINEL} turn."));
 
-    // Seed `~/.grok/config.toml` with a per-model reasoning-effort menu.
-    let grok_home = content.home().join(".grok");
-    std::fs::create_dir_all(&grok_home).expect("create .grok");
+    // Seed `~/.atlas/config.toml` with a per-model reasoning-effort menu.
+    let grok_home = content.home().join(".atlas");
+    std::fs::create_dir_all(&grok_home).expect("create .atlas");
     // Quote the dotted model id: bare `[model.grok-4.5]` is TOML key-path syntax (model.grok-4.5), not the id "grok-4.5".
     std::fs::write(
         grok_home.join("config.toml"),

@@ -11,9 +11,9 @@ use xai_hunk_tracker::{HunkTrackerActor, HunkTrackerHandle, TrackingMode};
 use xai_tool_protocol::ToolServerStatusPayload;
 use xai_tool_protocol::turn_hook::TurnHookOutcome;
 /// Default SIGTERM drain budget (ms); override via
-/// `GROK_WORKSPACE_TERMINATION_GRACE_MS`. 45s fits under the K8s grace period.
+/// `ATLAS_WORKSPACE_TERMINATION_GRACE_MS`. 45s fits under the K8s grace period.
 const DEFAULT_TERMINATION_GRACE_MS: u64 = 45_000;
-/// preStop-hook drain marker; override via `GROK_WORKSPACE_DRAINING_FILE`.
+/// preStop-hook drain marker; override via `ATLAS_WORKSPACE_DRAINING_FILE`.
 const DEFAULT_DRAINING_FILE: &str = "/tmp/workspace-server.draining";
 static DRAIN_STARTED_TOTAL: std::sync::LazyLock<IntCounterVec> = std::sync::LazyLock::new(|| {
     register_int_counter_vec!(
@@ -449,7 +449,7 @@ impl WorkspaceHandle {
             crate::upload::environment::WorkspaceIdentity::default(),
         )
     }
-    /// Construct a handle with an explicit `$GROK_WORKSPACE_HOME` and a
+    /// Construct a handle with an explicit `$ATLAS_WORKSPACE_HOME` and a
     /// pre-spawned [`UploadQueue`](xai_file_utils::queue::UploadQueue).
     ///
     /// [`connect_local_workspace`] calls this so the queue is backed by the
@@ -1314,7 +1314,7 @@ impl WorkspaceHandle {
     }
     /// Spawn a fire-and-forget per-turn `tool_state.json` snapshot + upload to
     /// `{session_id}/turn_{N}/tool_state.json`. No-op when
-    /// `GROK_WORKSPACE_TOOL_STATE_ENABLED` is off, opted out,
+    /// `ATLAS_WORKSPACE_TOOL_STATE_ENABLED` is off, opted out,
     /// there is no upload queue (local/test mode), or the
     /// session is unknown — legacy behavior unchanged.
     fn spawn_tool_state_upload(&self, session_id: &str, turn_number: u64) {
@@ -1386,7 +1386,7 @@ impl WorkspaceHandle {
     /// ordering, so a stale baseline-only write may rarely clobber a fresher
     /// baseline+MCP snapshot — accepted as telemetry-only.
     ///
-    /// No-op when the `GROK_WORKSPACE_TOOL_DEFS_ENABLED` flag is off, no upload
+    /// No-op when the `ATLAS_WORKSPACE_TOOL_DEFS_ENABLED` flag is off, no upload
     /// queue is wired, or the session is unknown.
     pub(crate) fn emit_workspace_tool_definitions(&self, session_id: &str) {
         if !self.shared.tool_defs_enabled {
@@ -3608,11 +3608,11 @@ fn classify_drain_outcome(
         DrainOutcome::Full
     }
 }
-/// The SIGTERM drain budget from `GROK_WORKSPACE_TERMINATION_GRACE_MS`
+/// The SIGTERM drain budget from `ATLAS_WORKSPACE_TERMINATION_GRACE_MS`
 /// (default [`DEFAULT_TERMINATION_GRACE_MS`]). The hub-evict path uses the
 /// hub-provided `grace_period_ms` instead.
 pub fn termination_grace_from_env() -> std::time::Duration {
-    grace_budget_from_raw(std::env::var("GROK_WORKSPACE_TERMINATION_GRACE_MS").ok())
+    grace_budget_from_raw(std::env::var("ATLAS_WORKSPACE_TERMINATION_GRACE_MS").ok())
 }
 /// Pure parse of the termination-grace env value: a positive integer ms wins,
 /// anything else (absent, unparseable, zero) falls back to the default.
@@ -3623,10 +3623,10 @@ fn grace_budget_from_raw(raw: Option<String>) -> std::time::Duration {
         .unwrap_or(DEFAULT_TERMINATION_GRACE_MS);
     std::time::Duration::from_millis(ms)
 }
-/// Path of the preStop drain marker (`GROK_WORKSPACE_DRAINING_FILE` or
+/// Path of the preStop drain marker (`ATLAS_WORKSPACE_DRAINING_FILE` or
 /// [`DEFAULT_DRAINING_FILE`]).
 fn draining_file_path() -> std::path::PathBuf {
-    std::env::var("GROK_WORKSPACE_DRAINING_FILE")
+    std::env::var("ATLAS_WORKSPACE_DRAINING_FILE")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from(DEFAULT_DRAINING_FILE))
 }
@@ -3706,7 +3706,7 @@ pub(crate) async fn stream_hash_and_range(
 ///
 /// `confine_fs_to_workspace_root` confines `x.ai/fs/*` resolution to the root.
 /// The standalone workspace server defaults it on (it always backs a remote
-/// sandbox; override via `GROK_WORKSPACE_CONFINE_FS_TO_ROOT`); the CLI leader
+/// sandbox; override via `ATLAS_WORKSPACE_CONFINE_FS_TO_ROOT`); the CLI leader
 /// passes `false`.
 ///
 /// Returns the connected handle (caller should keep it alive for the
@@ -3736,10 +3736,10 @@ pub async fn connect_local_workspace(
             workspace_home.display()
         ))
     })?;
-    let api_base_url = std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL")
+    let api_base_url = std::env::var("ATLAS_CLI_CHAT_PROXY_BASE_URL")
         .unwrap_or_else(|_| "https://cli-chat-proxy.grok.com/v1".to_string());
     let data_collection_disabled =
-        std::env::var("GROK_WORKSPACE_DATA_COLLECTION_DISABLED").as_deref() != Ok("false");
+        std::env::var("ATLAS_WORKSPACE_DATA_COLLECTION_DISABLED").as_deref() != Ok("false");
     let mut factory = WorkspaceSessionContextFactory::with_auth(auth.clone(), api_base_url.clone());
     if crate::session::tool_config::tool_state_enabled() {
         factory = factory.with_tool_state_home(workspace_home.clone());
@@ -3766,15 +3766,15 @@ pub async fn connect_local_workspace(
     ws_config.project_lsp_trusted = project_lsp_trusted;
     ws_config.require_explicit_toolset = require_explicit_toolset;
     ws_config.confine_fs_to_workspace_root = confine_fs_to_workspace_root;
-    if let Ok(dir) = std::env::var("GROK_WORKSPACE_SERVER_SKILLS_DIR")
+    if let Ok(dir) = std::env::var("ATLAS_WORKSPACE_SERVER_SKILLS_DIR")
         && !dir.is_empty()
     {
         ws_config.skills_config.server_skill_dirs = vec![dir];
     }
-    if let Ok(dir) = std::env::var("GROK_WORKSPACE_BUNDLED_SKILLS_DIR")
+    if let Ok(dir) = std::env::var("ATLAS_WORKSPACE_BUNDLED_SKILLS_DIR")
         && !dir.is_empty()
     {
-        let allowlist = std::env::var("GROK_WORKSPACE_BUNDLED_SKILLS_ALLOWLIST").ok();
+        let allowlist = std::env::var("ATLAS_WORKSPACE_BUNDLED_SKILLS_ALLOWLIST").ok();
         ws_config
             .skills_config
             .ignore
@@ -3827,14 +3827,14 @@ pub async fn connect_local_workspace(
     ws_handle.connect_hub().await?;
     Ok(ws_handle)
 }
-/// Resolve `$GROK_WORKSPACE_HOME` — the workspace-owned on-disk state root.
+/// Resolve `$ATLAS_WORKSPACE_HOME` — the workspace-owned on-disk state root.
 ///
 /// Precedence:
-/// 1. `$GROK_WORKSPACE_HOME` (operator override).
-/// 2. `<grok_home>/workspace`, where `<grok_home>` honours `$GROK_HOME` and
-///    otherwise falls back to `~/.grok` (see [`xai_grok_config::grok_home`]).
+/// 1. `$ATLAS_WORKSPACE_HOME` (operator override).
+/// 2. `<grok_home>/workspace`, where `<grok_home>` honours `$ATLAS_HOME` and
+///    otherwise falls back to `~/.atlas` (see [`xai_grok_config::grok_home`]).
 pub fn resolve_workspace_home() -> std::path::PathBuf {
-    if let Ok(p) = std::env::var("GROK_WORKSPACE_HOME")
+    if let Ok(p) = std::env::var("ATLAS_WORKSPACE_HOME")
         && !p.trim().is_empty()
     {
         return std::path::PathBuf::from(p);
@@ -3880,30 +3880,30 @@ fn bundled_allowlist_ignore_dirs(dir: &str, allowlist: Option<&str>) -> Vec<Stri
     dirs
 }
 /// Whether per-session `events.jsonl` recording is enabled
-/// (`GROK_WORKSPACE_EVENTS_ENABLED=true`). Any other value — including unset —
+/// (`ATLAS_WORKSPACE_EVENTS_ENABLED=true`). Any other value — including unset —
 /// keeps the legacy behaviour: [`WorkspaceShared::session_event_writer`] hands
 /// back [`EventWriter::noop()`](xai_file_utils::events::EventWriter::noop)
 /// and no `events.jsonl` is ever opened.
 fn events_enabled() -> bool {
-    std::env::var("GROK_WORKSPACE_EVENTS_ENABLED").as_deref() == Ok("true")
+    std::env::var("ATLAS_WORKSPACE_EVENTS_ENABLED").as_deref() == Ok("true")
 }
 /// Watchdog for awaiting enqueue outcomes when answering an `After` turn
 /// hook. MUST undercut the requester's 10s hook deadline or the reply (and
 /// its ack) arrives after the requester gave up. Default 8s; override via
-/// `GROK_WORKSPACE_AFTER_TURN_WATCHDOG_MS` (malformed values fall back).
+/// `ATLAS_WORKSPACE_AFTER_TURN_WATCHDOG_MS` (malformed values fall back).
 fn after_turn_watchdog() -> std::time::Duration {
     const DEFAULT_MS: u64 = 8_000;
-    let ms = std::env::var("GROK_WORKSPACE_AFTER_TURN_WATCHDOG_MS")
+    let ms = std::env::var("ATLAS_WORKSPACE_AFTER_TURN_WATCHDOG_MS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(DEFAULT_MS);
     std::time::Duration::from_millis(ms)
 }
 /// Whether per-session `workspace_tool_definitions.json` emission is enabled
-/// (`GROK_WORKSPACE_TOOL_DEFS_ENABLED=true`; any other value keeps legacy
+/// (`ATLAS_WORKSPACE_TOOL_DEFS_ENABLED=true`; any other value keeps legacy
 /// behaviour).
 fn tool_defs_enabled() -> bool {
-    std::env::var("GROK_WORKSPACE_TOOL_DEFS_ENABLED").as_deref() == Ok("true")
+    std::env::var("ATLAS_WORKSPACE_TOOL_DEFS_ENABLED").as_deref() == Ok("true")
 }
 /// Debounce window for `ToolsChanged`-driven re-emission: at most one re-emit
 /// per session per window.
@@ -4088,14 +4088,14 @@ fn reduce_enqueue_outcomes(
 }
 /// Per-process ephemeral workspace home for handles constructed without a
 /// backing upload queue (tests, local mode). Never the real grok home —
-/// only [`connect_local_workspace`] resolves `$GROK_WORKSPACE_HOME` — so the
+/// only [`connect_local_workspace`] resolves `$ATLAS_WORKSPACE_HOME` — so the
 /// queue-less default path can never collide with a real workspace's state dir.
 fn ephemeral_workspace_home() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("grok-workspace-ephemeral-{}", std::process::id()))
 }
-/// Resolve `workspace_rewind_all_outcomes` from `GROK_WORKSPACE_REWIND_ALL_OUTCOMES` (default off).
+/// Resolve `workspace_rewind_all_outcomes` from `ATLAS_WORKSPACE_REWIND_ALL_OUTCOMES` (default off).
 fn rewind_all_outcomes_from_env() -> bool {
-    xai_grok_config::env_bool("GROK_WORKSPACE_REWIND_ALL_OUTCOMES").unwrap_or(false)
+    xai_grok_config::env_bool("ATLAS_WORKSPACE_REWIND_ALL_OUTCOMES").unwrap_or(false)
 }
 /// Flush the session toolset's `ResourcesPersistence` to disk (a fresh
 /// snapshot, waiting for the atomic-rename write to land), then read the bytes
@@ -6404,7 +6404,7 @@ pub(crate) mod tests {
     }
     /// `WorkspaceHandle::new` (the test/default path, not `connect_local_workspace`)
     /// must use an ephemeral temp `workspace_home` — never the real
-    /// `$GROK_WORKSPACE_HOME` — must NOT configure an upload queue, and must leave
+    /// `$ATLAS_WORKSPACE_HOME` — must NOT configure an upload queue, and must leave
     /// the legacy inline-upload path inert (no storage config). This pins the
     /// flag-off defaults so uploads never start implicitly
     /// and `new` stays runtime-light (no queue worker spawned).
@@ -6421,7 +6421,7 @@ pub(crate) mod tests {
         assert_ne!(
             home,
             resolve_workspace_home(),
-            "default construction must NOT use the real $GROK_WORKSPACE_HOME"
+            "default construction must NOT use the real $ATLAS_WORKSPACE_HOME"
         );
         assert!(
             shared.upload_queue().is_none(),
@@ -6460,7 +6460,7 @@ pub(crate) mod tests {
         let _env = crate::session::tool_config::TOOL_STATE_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("GROK_WORKSPACE_TOOL_STATE_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_WORKSPACE_TOOL_STATE_ENABLED") };
         let factory = Arc::new(TestSessionContextFactory::new());
         let cwd = factory.temp.path().to_path_buf();
         let queue_home = tempfile::TempDir::new().unwrap();
@@ -6499,7 +6499,7 @@ pub(crate) mod tests {
         let _env = crate::session::tool_config::TOOL_STATE_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("GROK_WORKSPACE_TOOL_STATE_ENABLED", "true") };
+        unsafe { std::env::set_var("ATLAS_WORKSPACE_TOOL_STATE_ENABLED", "true") };
         let factory = Arc::new(TestSessionContextFactory::new());
         let cwd = factory.temp.path().to_path_buf();
         let queue_home = tempfile::TempDir::new().unwrap();
@@ -6519,7 +6519,7 @@ pub(crate) mod tests {
             .enqueued
             .load(std::sync::atomic::Ordering::Relaxed);
         handle.spawn_tool_state_upload("main", 1);
-        unsafe { std::env::remove_var("GROK_WORKSPACE_TOOL_STATE_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_WORKSPACE_TOOL_STATE_ENABLED") };
         drop(_env);
         tokio::task::yield_now().await;
         assert_eq!(
@@ -8964,7 +8964,7 @@ pub(crate) mod tests {
         let got = bundled_allowlist_ignore_dirs("/nonexistent/bundled-skills", Some("pdf"));
         assert_eq!(got, vec!["/nonexistent/bundled-skills".to_string()]);
     }
-    /// Unique skill names: discovery also reads the dev machine's `~/.grok`.
+    /// Unique skill names: discovery also reads the dev machine's `~/.atlas`.
     #[tokio::test]
     async fn bundled_allowlist_filters_discovery() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -9323,11 +9323,11 @@ pub(crate) mod tests {
         let _env = crate::session::tool_config::TOOL_STATE_ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("GROK_WORKSPACE_TOOL_STATE_ENABLED", "true") };
+        unsafe { std::env::set_var("ATLAS_WORKSPACE_TOOL_STATE_ENABLED", "true") };
         let (handle, _queue, _home) = make_handle_with_queue(false);
         assert_eq!(handle.shared.producer_tasks.len(), 0);
         handle.spawn_tool_state_upload("main", 1);
-        unsafe { std::env::remove_var("GROK_WORKSPACE_TOOL_STATE_ENABLED") };
+        unsafe { std::env::remove_var("ATLAS_WORKSPACE_TOOL_STATE_ENABLED") };
         drop(_env);
         assert_eq!(
             handle.shared.producer_tasks.len(),

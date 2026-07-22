@@ -12,7 +12,7 @@ pub struct TraceArgs {
     /// Save locally only, skip remote upload
     #[arg(long)]
     pub local: bool,
-    /// Output path (default: $GROK_HOME/trace-exports/<session-id>.tar.gz)
+    /// Output path (default: $ATLAS_HOME/trace-exports/<session-id>.tar.gz)
     #[arg(short, long)]
     pub output: Option<PathBuf>,
     /// Emit machine-readable JSON output
@@ -453,8 +453,8 @@ async fn run_upload(
         )
     {
         anyhow::bail!(
-            "No trace upload bucket configured. Set `GROK_TELEMETRY_GCS_BUCKET`, \
-             `GROK_TRACE_UPLOAD_BUCKET`, or `endpoints.trace_upload_bucket` in \
+            "No trace upload bucket configured. Set `ATLAS_TELEMETRY_GCS_BUCKET`, \
+             `ATLAS_TRACE_UPLOAD_BUCKET`, or `endpoints.trace_upload_bucket` in \
              config for direct GCS uploads."
         );
     }

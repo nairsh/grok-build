@@ -145,7 +145,7 @@ pub(crate) fn set_minimal_mode_active_for_test(on: bool) {
     MINIMAL_MODE_ACTIVE.store(on, Ordering::Release);
 }
 /// Whether the opt-in mouse-reporting toggle feature is enabled
-/// (`[ui] mouse_reporting_toggle` / `GROK_MOUSE_REPORTING_TOGGLE`). Seeded once
+/// (`[ui] mouse_reporting_toggle` / `ATLAS_MOUSE_REPORTING_TOGGLE`). Seeded once
 /// at startup; gates both the `Ctrl+R` shortcut registration and the
 /// `/toggle-mouse-reporting` slash command's visibility/execution.
 pub(crate) static MOUSE_REPORTING_TOGGLE_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -184,7 +184,7 @@ pub(crate) fn voice_mode_config_value() -> Option<bool> {
 }
 /// Resolve voice availability.
 ///
-/// Precedence: requirements > `GROK_VOICE_MODE` > config/managed
+/// Precedence: requirements > `ATLAS_VOICE_MODE` > config/managed
 /// `[features] voice_mode` > remote `voice_mode_enabled` > default on.
 ///
 /// When `is_api_key` and the only off-source is remote, force on. Requirement /
@@ -196,7 +196,7 @@ pub(crate) fn resolve_voice_mode_enabled(
     is_api_key: bool,
 ) -> bool {
     use xai_grok_shell::agent::config::{BoolFlag, ConfigSource};
-    let resolved = BoolFlag::env("GROK_VOICE_MODE")
+    let resolved = BoolFlag::env("ATLAS_VOICE_MODE")
         .requirement(requirement)
         .config(config)
         .feature_flag(remote)
@@ -459,7 +459,7 @@ mod provider_startup_tests {
 
     fn config(raw: &str) -> Config {
         // Keep these tests independent of credentials in the developer's real
-        // ~/.grok store by shadowing the built-in subscription connection.
+        // ~/.atlas store by shadowing the built-in subscription connection.
         let raw = format!(
             r#"
             [connection.openai-codex]
@@ -673,7 +673,7 @@ pub async fn run(
         } => original_cwd.clone(),
         _ => None,
     };
-    let env_hunk_tracker_mode = std::env::var("GROK_HUNK_TRACKER").ok();
+    let env_hunk_tracker_mode = std::env::var("ATLAS_HUNK_TRACKER").ok();
     let config_hunk_tracker_mode = raw_config
         .get("ui")
         .and_then(|ui| ui.get("hunk_tracker_mode"))

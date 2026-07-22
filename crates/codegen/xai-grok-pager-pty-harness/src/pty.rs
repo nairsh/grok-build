@@ -363,7 +363,7 @@ mod tests {
             cmd.env(color_var, "polluted");
         }
         // Unrelated vars must survive the hygiene pass untouched.
-        cmd.env("GROK_SCROLL_LOG", "/tmp/scroll.jsonl");
+        cmd.env("ATLAS_SCROLL_LOG", "/tmp/scroll.jsonl");
 
         apply_child_env(&mut cmd, &[]);
 
@@ -390,7 +390,7 @@ mod tests {
             Some("xterm-256color")
         );
         assert_eq!(
-            cmd.get_env("GROK_SCROLL_LOG").and_then(|v| v.to_str()),
+            cmd.get_env("ATLAS_SCROLL_LOG").and_then(|v| v.to_str()),
             Some("/tmp/scroll.jsonl"),
             "hygiene must not touch unrelated vars"
         );

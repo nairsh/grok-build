@@ -30,7 +30,7 @@ pub struct WorkflowUiModel {
 
 impl Default for WorkflowUiModel {
     fn default() -> Self {
-        let ultracode_enabled = std::env::var("GROK_ULTRACODE").ok().is_some_and(|value| {
+        let ultracode_enabled = std::env::var("ATLAS_ULTRACODE").ok().is_some_and(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
                 "1" | "true" | "yes" | "on"
@@ -899,7 +899,7 @@ fn render_list(
                 buf.set_string(
                     inner.x,
                     y,
-                    "No saved workflows in .grok/workflows.",
+                    "No saved workflows in .atlas/workflows.",
                     Style::default().fg(theme.gray),
                 );
                 return;
@@ -1493,9 +1493,9 @@ pub fn workers_from_journal(value: &Value) -> Vec<WorkflowWorker> {
 fn discover_saved_workflows(cwd: &Path) -> Vec<SavedWorkflow> {
     let mut by_name = BTreeMap::new();
     if let Some(home) = dirs::home_dir() {
-        load_saved_dir(&home.join(".grok/workflows"), false, &mut by_name);
+        load_saved_dir(&home.join(".atlas/workflows"), false, &mut by_name);
     }
-    load_saved_dir(&cwd.join(".grok/workflows"), true, &mut by_name);
+    load_saved_dir(&cwd.join(".atlas/workflows"), true, &mut by_name);
     by_name.into_values().collect()
 }
 
@@ -1660,7 +1660,7 @@ mod tests {
     #[test]
     fn project_saved_workflow_overrides_user_copy() {
         let root = tempfile::tempdir().unwrap();
-        let project = root.path().join(".grok/workflows");
+        let project = root.path().join(".atlas/workflows");
         std::fs::create_dir_all(&project).unwrap();
         std::fs::write(project.join("audit.js"), "return 'project';").unwrap();
         let mut by_name = BTreeMap::new();

@@ -2,9 +2,9 @@
 
 use semver::Version;
 
-pub const TEST_VERSION_ENV: &str = "GROK_TEST_VERSION";
+pub const TEST_VERSION_ENV: &str = "ATLAS_TEST_VERSION";
 
-pub const VERSION: &str = match option_env!("GROK_VERSION") {
+pub const VERSION: &str = match option_env!("ATLAS_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
 };

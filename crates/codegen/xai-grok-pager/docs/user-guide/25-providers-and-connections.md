@@ -39,8 +39,8 @@ the status. `/logout` opens the same window in a removal-only view, containing
 only saved credentials.
 
 For API keys, Atlas hides the key while you type, suggests the provider's
-current default model, stores the secret in `~/.grok/credentials.json`, and adds
-a complete connection plus model entry to `~/.grok/config.toml`. Restart Atlas
+current default model, stores the secret in `~/.atlas/credentials.json`, and adds
+a complete connection plus model entry to `~/.atlas/config.toml`. Restart Atlas
 after adding a provider from the running TUI so the agent reloads its model
 catalog.
 
@@ -52,7 +52,7 @@ export OPENAI_API_KEY=sk-...
 ```
 
 ```toml
-# ~/.grok/config.toml
+# ~/.atlas/config.toml
 [model.gpt-5.1]
 connection = "openai"
 model = "gpt-5.1"
@@ -154,7 +154,7 @@ for itself.
 ## Subscription login (Claude Pro/Max, ChatGPT, Copilot)
 
 Atlas can authenticate against provider **subscriptions** using OAuth, storing
-the tokens in `~/.grok/credentials.json` (0600) and refreshing expired tokens at
+the tokens in `~/.atlas/credentials.json` (0600) and refreshing expired tokens at
 startup.
 
 | Subscription | Credential id | Flow |

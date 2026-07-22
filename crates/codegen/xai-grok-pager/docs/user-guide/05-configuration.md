@@ -10,8 +10,8 @@ CLI flags. This document covers the common options.
 Configuration is resolved in this order (highest priority first):
 
 1. **CLI flags** (e.g., `--yolo`, `--model`, `--sandbox`)
-2. **Environment variables** (e.g., `XAI_API_KEY`, `GROK_MEMORY`)
-3. **config.toml** (`~/.grok/config.toml`)
+2. **Environment variables** (e.g., `XAI_API_KEY`, `ATLAS_MEMORY`)
+3. **config.toml** (`~/.atlas/config.toml`)
 4. **Managed / requirements config** (local files your org may deploy, e.g.
    `managed_config.toml` / `requirements.toml`)
 5. **Built-in defaults**
@@ -20,7 +20,7 @@ Configuration is resolved in this order (highest priority first):
 
 ## config.toml (Main Configuration)
 
-Location: `~/.grok/config.toml`
+Location: `~/.atlas/config.toml`
 
 If the file does not exist, Grok uses built-in defaults. Specify only the values you want to override.
 
@@ -139,7 +139,7 @@ that is `always_allow_all_sessions`. Note that the per-command "Always allow"
 rows appear only when `[ui] remember_tool_approvals = true` (default: false).
 See [22-permissions-and-safety.md](22-permissions-and-safety.md).
 
-The setting can also be overridden with the `GROK_DEFAULT_SELECTED_PERMISSION`
+The setting can also be overridden with the `ATLAS_DEFAULT_SELECTED_PERMISSION`
 environment variable — handy for headless / agent test runs that shouldn't
 mutate `config.toml`. Precedence: env var → `config.toml` →
 `always_allow_all_sessions` (the default).
@@ -156,7 +156,7 @@ active in the **scrollback** pane. It does not affect the input prompt.
 
 Toggle `vim_mode` at runtime with `/vim-mode`, or from the settings pane
 (`/settings` → **Vim scrollback navigation**). Grok writes the change to
-`[ui] vim_mode` in `~/.grok/config.toml` immediately and applies it to every
+`[ui] vim_mode` in `~/.atlas/config.toml` immediately and applies it to every
 future pager session — including new agents and subagents started in the same
 process. There is no separate per-session override; whatever is in
 `config.toml` is the source of truth on next launch.
@@ -207,8 +207,8 @@ invert_scroll = false
 
 Each setting also has an environment-variable override, applied on first load
 only — handy for headless / test runs that shouldn't mutate `config.toml`:
-`GROK_SCROLL_SPEED`, `GROK_SCROLL_MODE`, `GROK_INVERT_SCROLL`
-(`1`/`true`/`0`/`false`), and `GROK_SCROLL_LINES`. Precedence: env var →
+`ATLAS_SCROLL_SPEED`, `ATLAS_SCROLL_MODE`, `ATLAS_INVERT_SCROLL`
+(`1`/`true`/`0`/`false`), and `ATLAS_SCROLL_LINES`. Precedence: env var →
 `config.toml` → default. Unrecognized values fall back to the default, and
 out-of-range numbers clamp to the allowed range.
 
@@ -230,8 +230,8 @@ allowed_domains = ["docs.rs", "x.ai"]           # override the built-in allowlis
 
 `[toolset.ask_user_question]` is honored across **requirements.toml**, **managed
 config**, and **user `config.toml`**. Precedence: requirements → env
-(`GROK_ASK_USER_QUESTION_TIMEOUT_ENABLED` /
-`GROK_ASK_USER_QUESTION_TIMEOUT_SECS`) → user config → managed →
+(`ATLAS_ASK_USER_QUESTION_TIMEOUT_ENABLED` /
+`ATLAS_ASK_USER_QUESTION_TIMEOUT_SECS`) → user config → managed →
 defaults. Set `timeout_enabled = false` in your user config to disable the
 automatic questionnaire timeout for yourself; `timeout_secs` must be a
 positive integer. `timeout_enabled` can also be toggled from the settings
@@ -305,13 +305,13 @@ url = "https://mcp.example.com/api/mcp"  # HTTP/SSE transport
 headers = { "x-mcp-session-id" = "{{session_id}}" }
 ```
 
-MCP servers can also be configured per-project in `.grok/config.toml`. Project-scoped config contributes `[mcp_servers]`, `[plugins]`, and `[permission]` rules; other sections load only from `~/.grok/config.toml`.
+MCP servers can also be configured per-project in `.atlas/config.toml`. Project-scoped config contributes `[mcp_servers]`, `[plugins]`, and `[permission]` rules; other sections load only from `~/.atlas/config.toml`.
 
-Priority for `[mcp_servers]` and `[plugins]`: `.grok/config.toml` (current dir) > `<repo-root>/.grok/config.toml` > `~/.grok/config.toml`. `[permission]` rules are not overridden by priority; they merge across all files with `deny` > `ask` > `allow` (see [22-permissions-and-safety.md](22-permissions-and-safety.md)).
+Priority for `[mcp_servers]` and `[plugins]`: `.atlas/config.toml` (current dir) > `<repo-root>/.atlas/config.toml` > `~/.atlas/config.toml`. `[permission]` rules are not overridden by priority; they merge across all files with `deny` > `ask` > `allow` (see [22-permissions-and-safety.md](22-permissions-and-safety.md)).
 
 ### Memory
 
-Persist knowledge across sessions (requires `--experimental-memory` or `GROK_MEMORY=1`).
+Persist knowledge across sessions (requires `--experimental-memory` or `ATLAS_MEMORY=1`).
 
 ```toml
 [memory]
@@ -412,7 +412,7 @@ disabled = ["user/a1b2c3d4/noisy-plugin"]
 
 The `[hints]` table holds small persisted UI preferences — mostly "stop asking me" opt-outs. Grok writes these for you when you pick a "don't ask again" / "reset in config.toml" option in the TUI, but you can edit or remove them by hand. Deleting a key restores the default behavior.
 
-`[hints]` is read from the **effective config merge** (same precedence as other settings): system managed → user `managed_config.toml` → user `config.toml` → user `requirements.toml` → system `requirements.toml`. Higher-priority layers override lower ones. The TUI only **writes** opt-outs to user `~/.grok/config.toml`.
+`[hints]` is read from the **effective config merge** (same precedence as other settings): system managed → user `managed_config.toml` → user `config.toml` → user `requirements.toml` → system `requirements.toml`. Higher-priority layers override lower ones. The TUI only **writes** opt-outs to user `~/.atlas/config.toml`.
 
 ```toml
 [hints]
@@ -483,19 +483,19 @@ protocol automatically. Set `method` explicitly to override auto-detection.
 #### Notification Hooks
 
 Run custom commands when events occur. Hooks receive environment variables
-`$GROK_EVENT`, `$GROK_MESSAGE`, and `$GROK_SESSION_ID`.
+`$ATLAS_EVENT`, `$ATLAS_MESSAGE`, and `$ATLAS_SESSION_ID`.
 
 ```toml
 # macOS native notification
 [[ui.notifications.hooks]]
-command = "terminal-notifier -title 'Grok' -message '$GROK_MESSAGE'"
+command = "terminal-notifier -title 'Grok' -message '$ATLAS_MESSAGE'"
 events = ["turn_complete", "approval_required"]
 only_unfocused = true
 timeout_secs = 10
 
 # Push to ntfy server
 [[ui.notifications.hooks]]
-command = "curl -s -d '$GROK_MESSAGE' ntfy.sh/my-grok-alerts"
+command = "curl -s -d '$ATLAS_MESSAGE' ntfy.sh/my-grok-alerts"
 events = ["turn_complete"]
 only_unfocused = true
 timeout_secs = 10
@@ -562,7 +562,7 @@ The same `[telemetry]` table also configures the **external OpenTelemetry stream
 
 ```toml
 [telemetry]
-otel_enabled = true                                       # external OTEL master switch (= GROK_EXTERNAL_OTEL)
+otel_enabled = true                                       # external OTEL master switch (= ATLAS_EXTERNAL_OTEL)
 otel_metrics_exporter = "otlp"                            # otlp | console | none
 otel_logs_exporter = "otlp"                               # otlp | console | none
 otel_endpoint = "https://collector.corp.example:4318"     # OTLP base endpoint
@@ -601,7 +601,7 @@ telemetry = false
 
 ## pager.toml (Appearance Configuration)
 
-Location: `~/.grok/pager.toml`
+Location: `~/.atlas/pager.toml`
 
 Controls the visual appearance and behavior of the TUI. Changes are applied on restart.
 
@@ -731,50 +731,50 @@ Key environment variables. See the README for the complete list.
 | Variable | Description |
 |----------|-------------|
 | `XAI_API_KEY` | API key from console.x.ai |
-| `GROK_AUTH_PROVIDER_COMMAND` | External auth binary path |
-| `GROK_AUTH_PROVIDER_LABEL` | Display name on TUI login screen |
-| `GROK_AUTH_TOKEN_TTL` | Token lifetime in seconds |
-| `GROK_AUTH_EARLY_INVALIDATION_SECS` | Seconds before expiry to refresh (default: 300) |
-| `GROK_OIDC_ISSUER` | OIDC issuer URL |
-| `GROK_OIDC_CLIENT_ID` | OIDC client ID |
+| `ATLAS_AUTH_PROVIDER_COMMAND` | External auth binary path |
+| `ATLAS_AUTH_PROVIDER_LABEL` | Display name on TUI login screen |
+| `ATLAS_AUTH_TOKEN_TTL` | Token lifetime in seconds |
+| `ATLAS_AUTH_EARLY_INVALIDATION_SECS` | Seconds before expiry to refresh (default: 300) |
+| `ATLAS_OIDC_ISSUER` | OIDC issuer URL |
+| `ATLAS_OIDC_CLIENT_ID` | OIDC client ID |
 
 ### Endpoints
 
 | Variable | Description |
 |----------|-------------|
-| `GROK_CLI_CHAT_PROXY_BASE_URL` | Override API proxy base URL |
+| `ATLAS_CLI_CHAT_PROXY_BASE_URL` | Override API proxy base URL |
 
 ### Features
 
 | Variable | Description |
 |----------|-------------|
-| `GROK_MEMORY` | Enable (`1`) or disable (`0`) cross-session memory |
-| `GROK_SUBAGENTS` | Enable (`1`) or disable (`0`) subagents |
-| `GROK_WEB_FETCH` | Enable (`1`) or disable (`0`) the web_fetch tool |
-| `GROK_AGENT` | Custom agent definition path or name |
-| `GROK_SANDBOX` | Sandbox profile (off, workspace, devbox, read-only, strict; or a custom profile name) |
+| `ATLAS_MEMORY` | Enable (`1`) or disable (`0`) cross-session memory |
+| `ATLAS_SUBAGENTS` | Enable (`1`) or disable (`0`) subagents |
+| `ATLAS_WEB_FETCH` | Enable (`1`) or disable (`0`) the web_fetch tool |
+| `ATLAS_AGENT` | Custom agent definition path or name |
+| `ATLAS_SANDBOX` | Sandbox profile (off, workspace, devbox, read-only, strict; or a custom profile name) |
 
 ### Logging
 
 | Variable | Description |
 |----------|-------------|
-| `GROK_LOG_FILE` | Write logs to this file path (the value is used verbatim as the path) |
-| `RUST_LOG` | Log level filter (for example `debug`); controls the `GROK_LOG_FILE` log and headless stderr output |
+| `ATLAS_LOG_FILE` | Write logs to this file path (the value is used verbatim as the path) |
+| `RUST_LOG` | Log level filter (for example `debug`); controls the `ATLAS_LOG_FILE` log and headless stderr output |
 
 ### Paths
 
 | Variable | Description |
 |----------|-------------|
-| `GROK_HOME` | Override config directory (default: `~/.grok`) |
-| `GROK_RESPECT_GITIGNORE` | Force gitignore filtering on (`1`) or off (`0`); overrides `[tools] respect_gitignore` |
+| `ATLAS_HOME` | Override config directory (default: `~/.atlas`) |
+| `ATLAS_RESPECT_GITIGNORE` | Force gitignore filtering on (`1`) or off (`0`); overrides `[tools] respect_gitignore` |
 
 ### Telemetry
 
 | Variable | Description |
 |----------|-------------|
-| `GROK_TELEMETRY_ENABLED` | Enable/disable telemetry |
-| `GROK_FEEDBACK_ENABLED` | Enable/disable feedback system |
-| `GROK_DEPLOYMENT_KEY` | Management API key for enterprise |
+| `ATLAS_TELEMETRY_ENABLED` | Enable/disable telemetry |
+| `ATLAS_FEEDBACK_ENABLED` | Enable/disable feedback system |
+| `ATLAS_DEPLOYMENT_KEY` | Management API key for enterprise |
 
 ---
 
@@ -782,37 +782,37 @@ Key environment variables. See the README for the complete list.
 
 | Path | Description |
 |------|-------------|
-| `~/.grok/config.toml` | Main configuration file |
-| `~/.grok/pager.toml` | TUI appearance configuration |
-| `~/.grok/auth.json` | Authentication credentials (auto-managed) |
-| `~/.grok/sessions/` | Persisted sessions (organized by working directory) |
-| `~/.grok/memory/` | Cross-session memory files and index |
-| `~/.grok/skills/` | User-scoped skill definitions |
-| `~/.grok/plugins/` | User-scoped plugins |
-| `~/.grok/agents/` | User-scoped agent definitions |
-| `~/.grok/lsp.json` | LSP server configuration (user-scoped) |
-| `~/.grok/logs/` | Internal log files (for example `unified.jsonl`, MCP server logs) |
-| `.grok/config.toml` | Project-scoped MCP servers, plugins, and permission rules |
-| `.grok/skills/` | Project-scoped skill definitions |
-| `.grok/plugins/` | Project-scoped plugins |
-| `.grok/agents/` | Project-scoped agent definitions |
-| `.grok/hooks/` | Project-scoped hooks |
-| `.grok/lsp.json` | LSP server configuration |
+| `~/.atlas/config.toml` | Main configuration file |
+| `~/.atlas/pager.toml` | TUI appearance configuration |
+| `~/.atlas/auth.json` | Authentication credentials (auto-managed) |
+| `~/.atlas/sessions/` | Persisted sessions (organized by working directory) |
+| `~/.atlas/memory/` | Cross-session memory files and index |
+| `~/.atlas/skills/` | User-scoped skill definitions |
+| `~/.atlas/plugins/` | User-scoped plugins |
+| `~/.atlas/agents/` | User-scoped agent definitions |
+| `~/.atlas/lsp.json` | LSP server configuration (user-scoped) |
+| `~/.atlas/logs/` | Internal log files (for example `unified.jsonl`, MCP server logs) |
+| `.atlas/config.toml` | Project-scoped MCP servers, plugins, and permission rules |
+| `.atlas/skills/` | Project-scoped skill definitions |
+| `.atlas/plugins/` | Project-scoped plugins |
+| `.atlas/agents/` | Project-scoped agent definitions |
+| `.atlas/hooks/` | Project-scoped hooks |
+| `.atlas/lsp.json` | LSP server configuration |
 
 ---
 
 ## Project-Scoped Configuration
 
-Some configuration can be set per-project by placing files in `.grok/` within your repository:
+Some configuration can be set per-project by placing files in `.atlas/` within your repository:
 
 | File | What it configures |
 |------|--------------------|
-| `.grok/config.toml` | MCP servers, plugins, permission rules, and the `[mcp] max_output_bytes` tool-result cap (other sections load only from `~/.grok/config.toml`) |
-| `.grok/skills/` | Project-specific skills |
-| `.grok/hooks/` | Project-specific lifecycle hooks |
-| `.grok/agents/` | Project-specific agent definitions |
-| `.grok/lsp.json` | LSP server configuration |
-| `.grok/sandbox.toml` | Custom sandbox profiles |
+| `.atlas/config.toml` | MCP servers, plugins, permission rules, and the `[mcp] max_output_bytes` tool-result cap (other sections load only from `~/.atlas/config.toml`) |
+| `.atlas/skills/` | Project-specific skills |
+| `.atlas/hooks/` | Project-specific lifecycle hooks |
+| `.atlas/agents/` | Project-specific agent definitions |
+| `.atlas/lsp.json` | LSP server configuration |
+| `.atlas/sandbox.toml` | Custom sandbox profiles |
 | `AGENTS.md` | Project instructions (system prompt) |
 
 Project-scoped MCP servers override global ones with the same name (full replacement, not merge).
@@ -825,14 +825,14 @@ Language servers power passive diagnostics and the optional `lsp` tool (see the 
 
 | Source | Location | Scope |
 |--------|----------|-------|
-| User | `~/.grok/lsp.json` | All projects |
-| Project | `.grok/lsp.json` | Current repository |
+| User | `~/.atlas/lsp.json` | All projects |
+| Project | `.atlas/lsp.json` | Current repository |
 | Plugin | A trusted plugin's `.lsp.json` file, or an inline `lspServers` block in its `plugin.json` | Wherever the plugin is enabled |
 
 When the same server name is defined by more than one source, it is resolved in this order (highest priority first):
 
-1. **Project** -- `.grok/lsp.json`
-2. **User** -- `~/.grok/lsp.json`
+1. **Project** -- `.atlas/lsp.json`
+2. **User** -- `~/.atlas/lsp.json`
 3. **Plugins** -- file-based `.lsp.json`, then inline `lspServers`, in plugin load order
 
 Project and user entries replace lower-priority ones with the same name. Plugin entries only add servers whose names are not already defined by a local file, so a local `lsp.json` always wins over a plugin. Plugin LSP servers load only after the plugin is trusted (see [Plugins](09-plugins.md)).

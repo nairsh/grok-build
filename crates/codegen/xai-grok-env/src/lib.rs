@@ -51,7 +51,7 @@ impl GrokBuildEnvironment {
     }
     fn env_prefix(&self) -> &'static str {
         match self {
-            GrokBuildEnvironment::Production => "GROK_PRODUCTION",
+            GrokBuildEnvironment::Production => "ATLAS_PRODUCTION",
         }
     }
     /// Compiled endpoint set for this environment (production by default).
@@ -84,7 +84,7 @@ impl GrokBuildEnvironment {
         self.resolve("_WS_URL", self.endpoints().relay_ws_url)
     }
     /// The gateway WebSocket URL for `/cloud new` sandboxes. The shell's
-    /// `GROK_GATEWAY_URL` opt-in takes precedence.
+    /// `ATLAS_GATEWAY_URL` opt-in takes precedence.
     pub fn gateway_ws_url(&self) -> String {
         self.resolve("_GATEWAY_WS_URL", self.endpoints().gateway_ws_url)
     }
@@ -155,7 +155,7 @@ mod tests {
     fn test_env_prefix() {
         assert_eq!(
             GrokBuildEnvironment::Production.env_prefix(),
-            "GROK_PRODUCTION"
+            "ATLAS_PRODUCTION"
         );
     }
     #[test]

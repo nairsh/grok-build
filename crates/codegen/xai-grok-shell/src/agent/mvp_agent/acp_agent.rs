@@ -414,7 +414,7 @@ impl acp::Agent for MvpAgent {
                 )
                 .auth_methods(auth_methods)
                 .meta({
-                    let metadata = parse_json_object_env("GROK_AGENT_METADATA");
+                    let metadata = parse_json_object_env("ATLAS_AGENT_METADATA");
                     serde_json::json!(
                         { "grokShell" : true, "defaultAuthMethodId" :
                         default_auth_method_id_wire, (xai_grok_mcp::wire::MCP_SDK) :

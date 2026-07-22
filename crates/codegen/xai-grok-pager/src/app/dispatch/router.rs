@@ -1330,6 +1330,15 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                     app.show_toast("GitHub Copilot device-code login is not available yet.");
                     vec![]
                 }
+                "claude-agent" => {
+                    // Auth is owned by the `claude` runtime, not Atlas — surface
+                    // its status/`claude login` guidance instead of an OAuth flow.
+                    let status = xai_grok_shell::agent::claude_agent::login::detect();
+                    app.show_toast(&xai_grok_shell::agent::claude_agent::login::status_hint(
+                        &status,
+                    ));
+                    vec![]
+                }
                 _ => vec![],
             }
         }

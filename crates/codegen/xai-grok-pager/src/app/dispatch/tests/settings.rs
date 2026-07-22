@@ -130,7 +130,7 @@ fn toggle_vim_mode_propagates_to_open_subagent_views() {
 /// active, so it was a silent no-op and the overview's j/k never
 /// turned on. Turning vim ON also focuses the overview so j/k
 /// navigate immediately; turning it OFF returns focus to the input.
-#[serial_test::serial(GROK_AGENT_DASHBOARD)]
+#[serial_test::serial(ATLAS_AGENT_DASHBOARD)]
 #[test]
 fn toggle_vim_mode_works_on_dashboard_and_focuses_overview() {
     crate::appearance::cache::set_vim_mode(false);
