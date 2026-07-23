@@ -273,7 +273,7 @@ pub fn builtin_connections() -> IndexMap<String, ConnectionConfig> {
 /// with Atlas's current adapters. Providers that need a distinct transport
 /// (native Gemini/Vertex, Azure Responses) are deliberately excluded instead
 /// of being presented as working connections. Amazon Bedrock is included via
-/// its OpenAI-compatible `bedrock-runtime` endpoint rather than the native
+/// its Anthropic-compatible `bedrock-mantle` endpoint rather than the native
 /// Converse/InvokeModel API, which would need SigV4 signing and its own wire
 /// format — see the `bedrock` preset below.
 pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
@@ -375,20 +375,39 @@ pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
             "GEMINI_API_KEY",
             "gemini-3.1-pro-preview",
         ),
-        // Amazon Bedrock's `bedrock-runtime` OpenAI-compatible endpoint (not the
-        // native Converse/InvokeModel API, which needs SigV4 signing and its own
-        // wire format). Auth is a Bedrock API key sent as a bearer token via
-        // `AWS_BEARER_TOKEN_BEDROCK` — see "Create and manage Amazon Bedrock API
-        // keys" in the AWS docs. The endpoint is region-scoped; this defaults to
-        // us-east-1, override via a user `[connection.bedrock]` base_url for
-        // another region.
-        openai_compatible(
-            "bedrock",
-            "Amazon Bedrock",
-            "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
-            "AWS_BEARER_TOKEN_BEDROCK",
-            "us.anthropic.claude-sonnet-4-6",
-        ),
+        // Amazon Bedrock via its Anthropic-compatible `bedrock-mantle` endpoint
+        // (`/anthropic/v1/messages`), auth'd with a Bedrock API key sent as a
+        // bearer token via `AWS_BEARER_TOKEN_BEDROCK` — see "Create and manage
+        // Amazon Bedrock API keys" in the AWS docs. The endpoint is
+        // region-scoped; this defaults to us-east-1, override via a user
+        // `[connection.bedrock]` base_url for another region. Model ids on this
+        // endpoint are bare (`anthropic.claude-sonnet-4-6`, no `us.` prefix or
+        // date suffix — those are cross-region inference-profile ids for the
+        // native Converse/InvokeModel API, not this one).
+        //
+        // The former `bedrock-runtime` `/v1/chat/completions` route (previously
+        // used here via `openai_compatible`) always returns HTTP 200 with an
+        // AWS-internal `UnknownOperationException` body regardless of
+        // model/region/credential validity — verified live against both a
+        // short-term and a long-term Bedrock API key. Because that failure
+        // never carries an error status code, the sampler's retry classifier
+        // treats it as an empty/malformed response and retries silently for
+        // the full ~6-minute budget with nothing shown to the user.
+        ApiKeyProviderPreset {
+            id: "bedrock",
+            display_name: "Amazon Bedrock",
+            env_key: "AWS_BEARER_TOKEN_BEDROCK",
+            default_model: "anthropic.claude-sonnet-4-6",
+            connection: ConnectionConfig {
+                adapter: Some(ApiBackend::Messages),
+                base_url: Some("https://bedrock-mantle.us-east-1.api.aws/anthropic/v1".to_owned()),
+                extra_headers: [("anthropic-version".to_owned(), "2023-06-01".to_owned())]
+                    .into_iter()
+                    .collect(),
+                credential: CredentialRef::Env(EnvKeys::single("AWS_BEARER_TOKEN_BEDROCK")),
+                ..Default::default()
+            },
+        },
         openai_compatible(
             "groq",
             "Groq",
@@ -773,10 +792,10 @@ mod tests {
             .find(|preset| preset.id == "bedrock")
             .expect("Amazon Bedrock preset should be registered");
         assert_eq!(bedrock.env_key, "AWS_BEARER_TOKEN_BEDROCK");
-        assert_eq!(bedrock.connection.adapter, Some(ApiBackend::ChatCompletions));
+        assert_eq!(bedrock.connection.adapter, Some(ApiBackend::Messages));
         assert_eq!(
             bedrock.connection.base_url.as_deref(),
-            Some("https://bedrock-runtime.us-east-1.amazonaws.com/v1")
+            Some("https://bedrock-mantle.us-east-1.api.aws/anthropic/v1")
         );
     }
 

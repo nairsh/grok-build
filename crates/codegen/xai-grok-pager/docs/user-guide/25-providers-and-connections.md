@@ -88,23 +88,31 @@ adapters. Google Vertex, Azure OpenAI Responses, Cloudflare's account-scoped
 endpoints, and other native provider transports remain separate follow-up work
 rather than being advertised as compatible presets.
 
-Amazon Bedrock is included via its OpenAI-compatible `bedrock-runtime`
-endpoint (`/v1/chat/completions`), not the native Converse/InvokeModel API —
+Amazon Bedrock is included via its Anthropic-compatible `bedrock-mantle`
+endpoint (`/anthropic/v1/messages`), not the native Converse/InvokeModel API —
 that avoids needing SigV4 request signing. Auth is an [Amazon Bedrock API
 key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) sent
-as a bearer token via `AWS_BEARER_TOKEN_BEDROCK`. The preset defaults to
-`us-east-1`; for another region, add a `[connection.bedrock]` block in
-`~/.atlas/config.toml` with a `base_url` pointing at that region's
-`bedrock-runtime` endpoint (same id, so it overrides the built-in).
+as a bearer token via `AWS_BEARER_TOKEN_BEDROCK`. **Use a long-term key**
+(generated in the Bedrock console) — short-term/session keys authenticate
+against `bedrock-runtime` but are rejected by `bedrock-mantle`. The preset
+defaults to `us-east-1`; for another region, add a `[connection.bedrock]`
+block in `~/.atlas/config.toml` with a `base_url` pointing at that region's
+`bedrock-mantle` endpoint (same id, so it overrides the built-in).
 
 Unlike every other built-in preset (which seeds a single default model),
 Bedrock auto-seeds three Claude models to `/model` as soon as
-`AWS_BEARER_TOKEN_BEDROCK` is set: `us.anthropic.claude-sonnet-4-6`,
-`us.anthropic.claude-opus-4-6`, and `us.anthropic.claude-haiku-4-5`. Add your
-own `[model.*]` blocks against the `bedrock` connection to reach other Bedrock
-model ids instead (see [Defining your own
-connection](#defining-your-own-connection)); any explicit model on the
-connection suppresses this curated seeding.
+`AWS_BEARER_TOKEN_BEDROCK` is set: `anthropic.claude-sonnet-4-6`,
+`anthropic.claude-opus-4-6`, and `anthropic.claude-haiku-4-5` (bare ids —
+`bedrock-mantle` doesn't use the `us.`-prefixed, date-suffixed inference-profile
+ids the native API needs). Each model also needs access granted for your
+account in the Bedrock console (Model access); a denied model returns a clean
+`permission_error`, not a retry loop. Add your own `[model.*]` blocks against
+the `bedrock` connection to reach other Bedrock model ids instead (see
+[Defining your own connection](#defining-your-own-connection)); any explicit
+model on the connection suppresses this curated seeding. `atlas login bedrock`
+also accepts a comma-separated list of model ids, same as OpenRouter below, if
+you'd rather configure the set interactively than hand-write `[model.*]`
+blocks.
 
 LiteLLM Proxy is included as an OpenAI-compatible preset (`http://localhost:4000/v1` by
 default, and `/login litellm` lets you override it). When adding LiteLLM or another OpenAI-compatible custom endpoint,
@@ -178,7 +186,7 @@ startup.
 
 | Subscription | Credential id | Flow |
 |--------------|---------------|------|
-| Claude Pro/Max | `anthropic` | Browser (PKCE loopback) |
+| Claude Pro/Max | `claude-agent` | Delegated to `claude login` (Claude Agent SDK) |
 | ChatGPT (Codex) | `openai-codex` | Browser (PKCE loopback) |
 | GitHub Copilot | `github-copilot` | Not yet implemented |
 
@@ -189,7 +197,14 @@ subscription connections automatically:
   declares a tested Codex catalog compatibility level, ignores hidden/internal
   models, and keeps the last successful non-empty catalog for offline startup.
   A bundled model remains available if discovery has never succeeded.
-- Claude Pro/Max currently uses a bundled subscription model definition.
+- Claude Pro/Max does not go through Atlas's own OAuth or HTTP sampler at all.
+  It delegates the whole turn to the Claude Agent SDK (the `claude` binary),
+  authenticated with whatever `claude login` already set up on the machine —
+  run `atlas login claude` for status/guidance. Once `claude` reports
+  authenticated, Atlas seeds a single "Claude Agent SDK (subscription)" entry
+  in `/model` (restart atlas if it was already running) that runs with
+  `claude`'s own current default model; add your own `[model.*]` block on the
+  `claude-agent` connection with an explicit `model` to pin a specific one.
 
 > **Note:** subscription OAuth flows are ported from the open-source Pi Agent
 > Harness. Third-party subscription usage is billed by the provider per their

@@ -120,8 +120,17 @@ fn claude_agent_login_guidance() -> anyhow::Result<()> {
     let status = login::detect();
     println!("\nClaude Agent SDK\n");
     println!("  {}", login::status_hint(&status));
-    if !matches!(status, login::HarnessStatus::Ready) {
-        println!("\n  Then select a model on the `claude-agent` connection.");
+    match status {
+        login::HarnessStatus::Ready => {
+            println!(
+                "\n  Run `atlas` and pick the \"{}\" entry from `/model` \
+                 (restart atlas first if it was already running).",
+                crate::agent::claude_agent::DISPLAY_NAME
+            );
+        }
+        _ => {
+            println!("\n  Then select a model on the `claude-agent` connection.");
+        }
     }
     Ok(())
 }
@@ -229,10 +238,12 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
     let key = key.trim().to_owned();
     anyhow::ensure!(!key.is_empty(), "API key must not be empty");
     // OpenRouter's public catalog is intentionally not fetched: it is far too
-    // large for a useful local model picker. Ask for the explicit subset the
-    // user wants to enable instead.
+    // large for a useful local model picker. Bedrock has no `/models`
+    // discovery worth trusting either (access varies per model, per account).
+    // Both ask for the explicit subset the user wants to enable instead.
     let openrouter = provider_id == "openrouter";
-    let discovered_models = if !openrouter
+    let manual_multi_model = openrouter || provider_id == "bedrock";
+    let discovered_models = if !manual_multi_model
         && matches!(
             connection.adapter,
             Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
@@ -252,8 +263,11 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
         Vec::new()
     };
     let discovered_default = discovered_models.first().map(String::as_str);
-    let model_prompt = if openrouter {
-        "Model ids (comma-separated): ".to_owned()
+    let model_prompt = if manual_multi_model {
+        match default_model {
+            Some(default) => format!("Model ids (comma-separated) [{default}]: "),
+            None => "Model ids (comma-separated): ".to_owned(),
+        }
     } else {
         match default_model {
             Some(default) => format!("Model id [{}]: ", discovered_default.unwrap_or(default)),
@@ -268,11 +282,11 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
     };
     let model = prompt_line(&model_prompt).await?;
     let model = match (model.trim(), discovered_default.or(default_model)) {
-        ("", _) if openrouter => String::new(),
         ("", Some(default)) => default.to_owned(),
+        ("", None) => String::new(),
         (value, _) => value.to_owned(),
     };
-    let models = if openrouter {
+    let models = if manual_multi_model {
         let mut seen = std::collections::HashSet::new();
         let requested = model
             .split(',')
