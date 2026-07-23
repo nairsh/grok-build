@@ -174,7 +174,7 @@ impl ApiKeyForm {
     }
 
     fn needs_model_field(&self) -> bool {
-        self.base_url.is_none() || self.manual_model_entry
+        self.base_url.is_none() || self.manual_model_entry || !self.supports_discovery
     }
 
     fn active_text_mut(&mut self) -> &mut String {

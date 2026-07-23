@@ -409,7 +409,7 @@ pub fn api_key_provider_presets() -> Vec<ApiKeyProviderPreset> {
             id: "bedrock",
             display_name: "Amazon Bedrock",
             env_key: "AWS_BEARER_TOKEN_BEDROCK",
-            default_model: "anthropic.claude-sonnet-4-6",
+            default_model: "anthropic.claude-sonnet-4-6, anthropic.claude-opus-4-6, anthropic.claude-haiku-4-5",
             connection: ConnectionConfig {
                 adapter: Some(ApiBackend::Messages),
                 base_url: Some("https://bedrock-mantle.us-east-1.api.aws/anthropic/v1".to_owned()),
