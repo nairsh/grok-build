@@ -38,6 +38,15 @@ provider's setup flow, `d` to remove a saved credential, and `r` to refresh
 the status. `/logout` opens the same window in a removal-only view, containing
 only saved credentials.
 
+The model field in `/login`'s setup form always accepts a comma-separated list
+of model ids, not just for OpenRouter — useful for any provider without live
+`/models` discovery, including Bedrock and direct Anthropic API-key setups.
+Text fields support standard cursor editing: `Left`/`Right` to move,
+`Home`/`End` (or `Ctrl+A`/`Ctrl+E`) to jump to the start/end, `Alt`/`Ctrl`+
+`Left`/`Right` to jump by word, and `Delete`/`Backspace` at the cursor
+position — so fixing a typo or a bad paste no longer means clearing the field
+and retyping it.
+
 For API keys, Atlas hides the key while you type, suggests the provider's
 current default model, stores the secret in `~/.atlas/credentials.json`, and adds
 a complete connection plus model entry to `~/.atlas/config.toml`. Restart Atlas
@@ -201,10 +210,15 @@ subscription connections automatically:
   It delegates the whole turn to the Claude Agent SDK (the `claude` binary),
   authenticated with whatever `claude login` already set up on the machine —
   run `atlas login claude` for status/guidance. Once `claude` reports
-  authenticated, Atlas seeds a single "Claude Agent SDK (subscription)" entry
-  in `/model` (restart atlas if it was already running) that runs with
-  `claude`'s own current default model; add your own `[model.*]` block on the
-  `claude-agent` connection with an explicit `model` to pin a specific one.
+  authenticated, Atlas seeds five entries in `/model` (restart atlas if it was
+  already running): `Default` (no `--model` flag — defers to whatever `claude`
+  itself currently defaults to) plus `Sonnet 5`, `Opus 4.8`, `Haiku 4.5`, and
+  `Fable 5`, each passing the matching `claude --model <alias>` short alias
+  (verified against `claude --help`, which documents `sonnet`/`opus`/`fable`/
+  `haiku` as the latest-model aliases for each tier). Add your own `[model.*]`
+  block on the `claude-agent` connection with an explicit `model` (a full
+  model name, e.g. `claude-opus-4-8`) to pin something these aliases don't
+  cover.
 
 > **Note:** subscription OAuth flows are ported from the open-source Pi Agent
 > Harness. Third-party subscription usage is billed by the provider per their

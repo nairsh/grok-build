@@ -238,16 +238,13 @@ async fn add_api_key(preset: Option<ApiKeyProviderPreset>) -> anyhow::Result<()>
     let key = key.trim().to_owned();
     anyhow::ensure!(!key.is_empty(), "API key must not be empty");
     // OpenRouter's public catalog is intentionally not fetched: it is far too
-    // large for a useful local model picker. Bedrock has no `/models`
-    // discovery worth trusting either (access varies per model, per account).
-    // Both ask for the explicit subset the user wants to enable instead.
+    // large for a useful local model picker. Messages-adapter connections
+    // (Anthropic, Bedrock) have no `/models` discovery endpoint at all. Both
+    // ask for the explicit subset the user wants to enable instead.
     let openrouter = provider_id == "openrouter";
-    let manual_multi_model = openrouter || provider_id == "bedrock";
-    let discovered_models = if !manual_multi_model
-        && matches!(
-            connection.adapter,
-            Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
-        ) {
+    let manual_multi_model =
+        openrouter || !crate::agent::connection::supports_model_discovery(&connection);
+    let discovered_models = if !manual_multi_model {
         match discover_openai_models(&connection, &key).await {
             Ok(models) if !models.is_empty() => {
                 println!("\nFound {} models at this endpoint.", models.len());

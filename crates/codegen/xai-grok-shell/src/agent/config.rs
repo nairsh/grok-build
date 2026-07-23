@@ -3393,22 +3393,27 @@ fn add_builtin_subscription_models_with_store(
     // The Anthropic Pro/Max subscription no longer runs through a raw-API
     // model here — that reverse-engineered OAuth path has been removed.
     // Claude subscription use runs through the Claude Agent SDK harness
-    // backend (`crate::agent::claude_agent`) instead; seed one picker entry
+    // backend (`crate::agent::claude_agent`) instead; seed picker entries
     // for it below so a logged-in `claude` shows up in `/model` without
     // requiring a hand-written `[model.*]` block.
     add_builtin_claude_agent_model(cfg, resolved, store);
 }
 
-/// Seed one `/model` entry for the Claude Agent SDK harness backend once
+/// Seed `/model` entries for the Claude Agent SDK harness backend once
 /// `claude login` has completed. Unlike every other builtin seeder, this
 /// backend has no API key or env var to gate on -- auth is entirely
 /// delegated to the `claude` binary (see `claude_agent::login`) -- so
 /// [`login::detect`] is the credential check here.
 ///
-/// The seeded model id is deliberately empty: `claude_harness_turn` filters
-/// an empty model to `None`, which omits `--model` from the harness
-/// invocation and lets `claude` pick its own current default rather than
-/// Atlas pinning a version string it can't verify.
+/// Each entry's model id is one of `claude --help`'s own documented
+/// `--model` aliases (verified live against an installed `claude` 2.1.206:
+/// `--model <alias>` accepts `sonnet`/`opus`/`fable`/`haiku` for the latest
+/// model in that tier, or a full name). Using the alias rather than a pinned
+/// full model string means these stay correct as Anthropic ships new point
+/// releases, without an Atlas update. A leading empty-model "Default" entry
+/// is kept too: `claude_harness_turn` filters an empty model to `None`,
+/// which omits `--model` entirely and defers to whatever `claude` itself
+/// currently defaults to.
 fn add_builtin_claude_agent_model(
     cfg: &Config,
     resolved: &mut IndexMap<String, ModelEntry>,
@@ -3416,15 +3421,18 @@ fn add_builtin_claude_agent_model(
 ) {
     use crate::agent::claude_agent::{self, login};
 
+    const MODELS: &[(&str, &str)] = &[
+        ("", "Default"),
+        ("sonnet", "Sonnet 5"),
+        ("opus", "Opus 4.8"),
+        ("haiku", "Haiku 4.5"),
+        ("fable", "Fable 5"),
+    ];
+
     if has_explicit_models_for_connection(cfg, claude_agent::CONNECTION_ID) {
         return;
     }
     if !matches!(login::detect(), login::HarnessStatus::Ready) {
-        return;
-    }
-
-    let catalog_id = format!("{}/default", claude_agent::CONNECTION_ID);
-    if resolved.contains_key(&catalog_id) {
         return;
     }
 
@@ -3437,18 +3445,33 @@ fn add_builtin_claude_agent_model(
         return;
     };
 
-    let mut entry = ModelEntry::fallback("", &cfg.endpoints);
-    connection.apply_as_base_with_store(&mut entry, store);
-    // Kept short: `to_acp_model_info`/`provider_label` appends "· Claude"
-    // from the catalog key, so this is the whole display name, not just a
-    // fragment of it.
-    entry.info.name = Some("Default".to_owned());
-    entry.info.description = Some(format!(
-        "{} via `claude login`; uses claude's own current default model",
-        claude_agent::DISPLAY_NAME
-    ));
-    entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
-    resolved.insert(catalog_id, entry);
+    for &(alias, name) in MODELS {
+        let key_suffix = if alias.is_empty() { "default" } else { alias };
+        let catalog_id = format!("{}/{key_suffix}", claude_agent::CONNECTION_ID);
+        if resolved.contains_key(&catalog_id) {
+            continue;
+        }
+
+        let mut entry = ModelEntry::fallback(alias, &cfg.endpoints);
+        connection.apply_as_base_with_store(&mut entry, store);
+        // Kept short: `to_acp_model_info`/`provider_label` appends "· Claude"
+        // from the catalog key, so this is the whole display name, not just
+        // a fragment of it.
+        entry.info.name = Some(name.to_owned());
+        entry.info.description = Some(if alias.is_empty() {
+            format!(
+                "{} via `claude login`; uses claude's own current default model",
+                claude_agent::DISPLAY_NAME
+            )
+        } else {
+            format!(
+                "{name} via `claude login` (`claude --model {alias}`), {}",
+                claude_agent::DISPLAY_NAME
+            )
+        });
+        entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
+        resolved.insert(catalog_id, entry);
+    }
 }
 
 fn add_builtin_openai_subscription_model(

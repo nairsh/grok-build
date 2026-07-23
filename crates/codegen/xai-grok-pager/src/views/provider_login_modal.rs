@@ -17,6 +17,16 @@ use crate::views::modal_window::{
 
 const TITLE: &str = "Providers & login";
 
+/// Byte offset of the `char_index`-th character in `s` (i.e. `s.len()` once
+/// `char_index` reaches or exceeds the character count) — the conversion
+/// every cursor-position edit needs since `String` indexing is byte-based
+/// but the cursor tracks character positions.
+fn char_byte_index(s: &str, char_index: usize) -> usize {
+    s.char_indices()
+        .nth(char_index)
+        .map_or(s.len(), |(byte_index, _)| byte_index)
+}
+
 #[derive(Debug, Clone)]
 enum EntryKind {
     Header { logged_in: bool },
@@ -87,12 +97,22 @@ struct ApiKeyForm {
     /// Fixed endpoint used for model discovery by built-in providers. Custom
     /// and LiteLLM connections use their editable `base_url` instead.
     model_discovery_url: Option<String>,
+    /// Whether this connection's adapter exposes a `GET /models` resource at
+    /// all (`Messages`-adapter presets like Anthropic/Bedrock don't). When
+    /// false, discovery is skipped entirely and the model field always shows
+    /// the comma-separated multi-model UI instead of a single-id prompt.
+    supports_discovery: bool,
     discovering_models: bool,
     discovery_request_id: Option<u64>,
     /// Only shown if `/models` is unavailable. Normal LiteLLM/custom setup
     /// never asks the user to know a model identifier.
     manual_model_entry: bool,
     field: usize,
+    /// Character index (not byte offset) of the insertion point within the
+    /// currently active field. Reset to the end of a field's text whenever
+    /// focus moves to it (Tab/Shift+Tab/click), matching the pre-cursor
+    /// behavior of always editing at the end unless the user moves it.
+    cursor: usize,
 }
 
 impl ApiKeyForm {
@@ -100,27 +120,34 @@ impl ApiKeyForm {
         let preset = xai_grok_shell::agent::connection::api_key_provider_presets()
             .into_iter()
             .find(|preset| preset.id == provider);
-        let (connection_name, base_url, model, model_discovery_url) = match preset {
-            Some(preset) => (
-                provider.clone(),
-                (provider == "litellm")
-                    .then(|| preset.connection.base_url.clone().unwrap_or_default()),
-                (provider != "litellm" && provider != "openrouter")
-                    .then(|| preset.default_model.to_owned())
-                    .unwrap_or_default(),
-                // OpenRouter's public catalog is huge. Let the user opt in to
-                // only the model ids they want instead of importing it all.
-                (provider != "openrouter")
-                    .then(|| preset.connection.base_url.clone())
-                    .flatten(),
-            ),
-            None => (
-                "custom".to_owned(),
-                Some(String::new()),
-                String::new(),
-                None,
-            ),
-        };
+        let (connection_name, base_url, model, model_discovery_url, supports_discovery) =
+            match &preset {
+                Some(preset) => (
+                    provider.clone(),
+                    (provider == "litellm")
+                        .then(|| preset.connection.base_url.clone().unwrap_or_default()),
+                    (provider != "litellm" && provider != "openrouter")
+                        .then(|| preset.default_model.to_owned())
+                        .unwrap_or_default(),
+                    // OpenRouter's public catalog is huge. Let the user opt in to
+                    // only the model ids they want instead of importing it all.
+                    (provider != "openrouter")
+                        .then(|| preset.connection.base_url.clone())
+                        .flatten(),
+                    provider != "openrouter"
+                        && xai_grok_shell::agent::connection::supports_model_discovery(
+                            &preset.connection,
+                        ),
+                ),
+                None => (
+                    "custom".to_owned(),
+                    Some(String::new()),
+                    String::new(),
+                    None,
+                    true,
+                ),
+            };
+        let cursor = connection_name.chars().count();
         Self {
             provider,
             connection_name,
@@ -129,10 +156,12 @@ impl ApiKeyForm {
             model,
             models: Vec::new(),
             model_discovery_url,
+            supports_discovery,
             discovering_models: false,
             discovery_request_id: None,
             manual_model_entry: false,
             field: 0,
+            cursor,
         }
     }
 
@@ -158,6 +187,108 @@ impl ApiKeyForm {
         }
     }
 
+    fn active_text(&self) -> &str {
+        match self.field {
+            0 => &self.connection_name,
+            1 if self.base_url.is_some() => self.base_url.as_deref().expect("checked above"),
+            field if self.needs_model_field() && field + 1 == self.field_count() => &self.model,
+            field if field == self.api_key_field() => &self.api_key,
+            _ => unreachable!("form field index is always valid"),
+        }
+    }
+
+    /// Move focus to `field` and place the cursor at the end of its text —
+    /// the same position editing always started from before the cursor
+    /// existed, so tabbing/clicking into a field behaves the way it always
+    /// has, while arrow keys now let the user reposition from there.
+    fn set_field(&mut self, field: usize) {
+        self.field = field;
+        self.cursor = self.active_text().chars().count();
+    }
+
+    fn cursor_byte_index(&self) -> usize {
+        char_byte_index(self.active_text(), self.cursor)
+    }
+
+    /// Insert `text` at the cursor and advance the cursor past it. Used by
+    /// both single-character typing and paste, so paste can drop text
+    /// mid-string instead of always landing at the end.
+    fn insert_at_cursor(&mut self, text: &str) {
+        let byte_index = self.cursor_byte_index();
+        let inserted_chars = text.chars().count();
+        self.active_text_mut().insert_str(byte_index, text);
+        self.cursor += inserted_chars;
+    }
+
+    /// Backspace: delete the character before the cursor.
+    fn delete_before_cursor(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let text = self.active_text();
+        let end = char_byte_index(text, self.cursor);
+        let start = char_byte_index(text, self.cursor - 1);
+        self.active_text_mut().replace_range(start..end, "");
+        self.cursor -= 1;
+    }
+
+    /// Forward-delete: delete the character at the cursor, cursor unmoved.
+    fn delete_at_cursor(&mut self) {
+        let text = self.active_text();
+        let len = text.chars().count();
+        if self.cursor >= len {
+            return;
+        }
+        let start = char_byte_index(text, self.cursor);
+        let end = char_byte_index(text, self.cursor + 1);
+        self.active_text_mut().replace_range(start..end, "");
+    }
+
+    fn move_cursor_left(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let len = self.active_text().chars().count();
+        self.cursor = (self.cursor + 1).min(len);
+    }
+
+    fn move_cursor_home(&mut self) {
+        self.cursor = 0;
+    }
+
+    fn move_cursor_end(&mut self) {
+        self.cursor = self.active_text().chars().count();
+    }
+
+    /// Jump left to the start of the previous word, skipping the run of
+    /// whitespace/separators the cursor may already be sitting in.
+    fn move_cursor_word_left(&mut self) {
+        let chars: Vec<char> = self.active_text().chars().collect();
+        let mut index = self.cursor;
+        while index > 0 && !chars[index - 1].is_alphanumeric() {
+            index -= 1;
+        }
+        while index > 0 && chars[index - 1].is_alphanumeric() {
+            index -= 1;
+        }
+        self.cursor = index;
+    }
+
+    /// Jump right to the end of the next word.
+    fn move_cursor_word_right(&mut self) {
+        let chars: Vec<char> = self.active_text().chars().collect();
+        let len = chars.len();
+        let mut index = self.cursor;
+        while index < len && !chars[index].is_alphanumeric() {
+            index += 1;
+        }
+        while index < len && chars[index].is_alphanumeric() {
+            index += 1;
+        }
+        self.cursor = index;
+    }
+
     fn invalidate_model_discovery(&mut self) {
         self.discovering_models = false;
         self.discovery_request_id = None;
@@ -168,6 +299,9 @@ impl ApiKeyForm {
     }
 
     fn model_discovery_base_url(&self) -> Option<&str> {
+        if !self.supports_discovery {
+            return None;
+        }
         self.base_url
             .as_deref()
             .or(self.model_discovery_url.as_deref())
@@ -351,13 +485,13 @@ impl ProviderLoginModalState {
             }
             Ok(_) => {
                 form.manual_model_entry = true;
-                form.field = form.model_field().expect("manual field enabled");
+                form.set_field(form.model_field().expect("manual field enabled"));
                 self.notice =
                     Some("The endpoint returned no models; enter an id manually.".to_owned());
             }
             Err(error) => {
                 form.manual_model_entry = true;
-                form.field = form.model_field().expect("manual field enabled");
+                form.set_field(form.model_field().expect("manual field enabled"));
                 self.notice = Some(format!("Could not fetch /models: {error}"));
             }
         }
@@ -896,7 +1030,11 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
     fields.push(("API key", form.api_key.as_str(), true));
     if form.needs_model_field() {
         fields.push((
-            if form.provider == "openrouter" {
+            // Every manually-entered model field already accepts a
+            // comma-separated list (`models_to_save` splits on `,`
+            // unconditionally); the label only needs to advertise that when
+            // there's no live discovery to fall back to for a single default.
+            if form.model_discovery_base_url().is_none() {
                 "Models (comma-separated)"
             } else {
                 "Model id"
@@ -917,13 +1055,40 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
             (*value).to_owned()
         };
         let marker = if selected { "›" } else { " " };
-        let text = format!("{marker} {label}: {shown}");
         let style = if selected {
             Style::default().fg(theme.text_primary).bg(theme.bg_visual)
         } else {
             Style::default().fg(theme.text_primary)
         };
-        buf.set_span(content.x, y, &Span::styled(text, style), content.width);
+        if !selected {
+            let text = format!("{marker} {label}: {shown}");
+            buf.set_span(content.x, y, &Span::styled(text, style), content.width);
+            continue;
+        }
+        // The selected field renders a visible block cursor at `form.cursor`
+        // by splitting the value into before/at/after the cursor position and
+        // giving the "at" character an inverted style, since this buffer has
+        // no access to the terminal's real hardware cursor.
+        let prefix = format!("{marker} {label}: ");
+        let cursor_byte = char_byte_index(&shown, form.cursor);
+        let before = &shown[..cursor_byte];
+        let mut rest = shown[cursor_byte..].chars();
+        let at_cursor = rest.next();
+        let after: String = rest.collect();
+        let (x, _) = buf.set_span(
+            content.x,
+            y,
+            &Span::styled(format!("{prefix}{before}"), style),
+            content.width,
+        );
+        let cursor_style = style.add_modifier(Modifier::REVERSED);
+        let (x, _) = buf.set_span(
+            x,
+            y,
+            &Span::styled(at_cursor.map_or_else(|| " ".to_owned(), String::from), cursor_style),
+            content.width,
+        );
+        buf.set_span(x, y, &Span::styled(after, style), content.width);
     }
     if form.model_discovery_base_url().is_some() {
         let y = content.y + 2 + fields.len() as u16 * 2;
@@ -945,7 +1110,7 @@ fn render_api_key_form(buf: &mut Buffer, content: Rect, form: &ApiKeyForm, theme
             content.width,
         );
     }
-    let hint = if form.provider == "openrouter" {
+    let hint = if form.model_discovery_base_url().is_none() {
         "Enter model ids separated by commas · Ctrl+S saves each one."
     } else {
         "Pasting an API key loads all models · Ctrl+R reloads · Ctrl+S saves."
@@ -1009,7 +1174,7 @@ pub fn handle_provider_login_key(
             }
             KeyCode::Tab | KeyCode::Enter => {
                 let leaving_api_key = form.field == form.api_key_field();
-                form.field = (form.field + 1) % form.field_count();
+                form.set_field((form.field + 1) % form.field_count());
                 let load_models = leaving_api_key
                     && form.models.is_empty()
                     && form.model_discovery_base_url().is_some()
@@ -1022,12 +1187,58 @@ pub fn handle_provider_login_key(
                 }
             }
             KeyCode::BackTab => {
-                form.field = form.field.checked_sub(1).unwrap_or(form.field_count() - 1);
+                let previous = form.field.checked_sub(1).unwrap_or(form.field_count() - 1);
+                form.set_field(previous);
+                return InputOutcome::Changed;
+            }
+            KeyCode::Left
+                if key
+                    .modifiers
+                    .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) =>
+            {
+                form.move_cursor_word_left();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Right
+                if key
+                    .modifiers
+                    .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) =>
+            {
+                form.move_cursor_word_right();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Left => {
+                form.move_cursor_left();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Right => {
+                form.move_cursor_right();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Home | KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                form.move_cursor_home();
+                return InputOutcome::Changed;
+            }
+            KeyCode::End | KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                form.move_cursor_end();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Home => {
+                form.move_cursor_home();
+                return InputOutcome::Changed;
+            }
+            KeyCode::End => {
+                form.move_cursor_end();
+                return InputOutcome::Changed;
+            }
+            KeyCode::Delete => {
+                form.invalidate_model_discovery();
+                form.delete_at_cursor();
                 return InputOutcome::Changed;
             }
             KeyCode::Backspace => {
                 form.invalidate_model_discovery();
-                form.active_text_mut().pop();
+                form.delete_before_cursor();
                 return InputOutcome::Changed;
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1046,7 +1257,8 @@ pub fn handle_provider_login_key(
             }
             KeyCode::Char(c) if crate::input::key::is_text_input_key(key) => {
                 form.invalidate_model_discovery();
-                form.active_text_mut().push(c);
+                let mut buf = [0u8; 4];
+                form.insert_at_cursor(c.encode_utf8(&mut buf));
                 return InputOutcome::Changed;
             }
             _ => return InputOutcome::Unchanged,
@@ -1167,7 +1379,7 @@ fn paste_into_active_field(state: &mut ProviderLoginModalState, text: &str) -> I
         return InputOutcome::Unchanged;
     };
     form.invalidate_model_discovery();
-    form.active_text_mut().push_str(&cleaned);
+    form.insert_at_cursor(&cleaned);
     InputOutcome::Changed
 }
 
@@ -1196,7 +1408,7 @@ pub fn handle_provider_login_mouse(
         }
         let field = ((row - first_field_y) / 2) as usize;
         if field < form.field_count() {
-            form.field = field;
+            form.set_field(field);
             return InputOutcome::Changed;
         }
         return InputOutcome::Unchanged;

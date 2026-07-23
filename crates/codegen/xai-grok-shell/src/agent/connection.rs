@@ -212,6 +212,18 @@ impl ConnectionConfig {
     }
 }
 
+/// Whether an OpenAI-compatible `GET /models` request is meaningful for this
+/// connection. `Messages`-adapter connections (Anthropic, Bedrock) don't
+/// expose that resource, so both the `atlas login` CLI flow and the native
+/// `/login` modal use this to skip discovery and fall back to a manually
+/// entered model id instead of silently requesting a route that doesn't exist.
+pub fn supports_model_discovery(connection: &ConnectionConfig) -> bool {
+    matches!(
+        connection.adapter,
+        Some(ApiBackend::ChatCompletions | ApiBackend::Responses)
+    )
+}
+
 /// Built-in connections shipped with the CLI so common providers can be used
 /// without writing a `[connection.*]` block. A user-defined `[connection.<id>]`
 /// with the same id fully overrides the built-in (Pi-style provider override).

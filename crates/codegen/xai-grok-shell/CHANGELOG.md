@@ -1,5 +1,13 @@
 # Changelog
 
+# 0.2.105 — 2026-07-23
+
+## Features
+
+- **Claude Agent SDK (subscription) now seeds five `/model` entries** instead of one generic "Default": `Sonnet 5`, `Opus 4.8`, `Haiku 4.5`, and `Fable 5` (each passing the matching `claude --model <alias>` short alias, verified against an installed `claude` CLI), plus `Default` (no `--model` flag, defers to whatever `claude` itself currently defaults to).
+- **`/login`'s model field now advertises comma-separated multi-model entry for every provider without live `/models` discovery** (not just OpenRouter), including Bedrock and direct Anthropic API-key setups. Fixed a related bug where the modal silently attempted `/models` discovery against Messages-adapter endpoints (Bedrock, Anthropic) that don't expose that route at all.
+- **`/login`'s text fields now have a real cursor**: `Left`/`Right` to move, `Home`/`End`/`Ctrl+A`/`Ctrl+E` to jump to start/end, `Alt`/`Ctrl`+`Left`/`Right` to jump by word, and `Delete`/`Backspace` at the cursor position, with a visible cursor indicator. Previously every field could only be edited by appending/removing from the end, so fixing a typo or a bad paste meant clearing and retyping the whole value.
+
 # 0.2.104 — 2026-07-23
 
 ## Bug Fixes
