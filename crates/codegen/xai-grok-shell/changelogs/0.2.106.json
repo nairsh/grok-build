@@ -1,0 +1,7 @@
+[
+  {
+    "category": "fixes",
+    "description": "**Release CI builds are significantly faster.** `codegen-units` in the `release-dist` profile was 1 (forces fully serial codegen per crate); raised to 16. Thin LTO still handles cross-crate optimization at link time regardless, so this mainly restores intra-crate parallelism for the largest crates. The prior setting meant the \"Build distribution binary\" step alone accounted for ~43 of every ~45-minute release build, even with a cache hit, since every release's ATLAS_VERSION bump invalidates xai-grok-version's build script and cascades to its 16 direct dependents.",
+    "breaking_change": false
+  }
+]

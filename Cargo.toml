@@ -330,15 +330,22 @@ panic = "abort"
 # Use `cargo build --profile release-dist` for distribution builds.
 # Not used by default `--release` to avoid slowing down local dev builds (~2.2x).
 #
-# Hardening: thin LTO for cross-crate optimization with reasonable link times,
-# codegen-units=1 maximizes optimization (whole-program analysis, no CGU boundaries).
-# debug=1 emits line-tables DWARF; strip=false keeps symbols so CI can extract
-# .debug sidecars (Linux) or .dSYM bundles (macOS) before stripping post-build.
-# Linker flags (RELRO, NX stack) are set per-target in .cargo/config.toml.
+# Hardening: thin LTO still does cross-crate optimization at link time regardless
+# of codegen-units, so raising codegen-units from 1 to 16 restores intra-crate
+# parallelism (each crate's codegen work split across cores instead of one
+# giant serial unit) at a small cost in peak optimization/binary size -- this
+# was the dominant cost in release CI builds (~43 of ~45 minutes was the build
+# step alone), since codegen-units=1 serialized codegen for every crate that
+# rebuilds on a version bump (xai-grok-version's build.rs reruns on
+# ATLAS_VERSION changes, cascading to its ~16 direct dependents and further
+# downstream). debug=1 emits line-tables DWARF; strip=false keeps symbols so CI
+# can extract .debug sidecars (Linux) or .dSYM bundles (macOS) before stripping
+# post-build. Linker flags (RELRO, NX stack) are set per-target in
+# .cargo/config.toml.
 [profile.release-dist]
 inherits = "release"
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 strip = false
 debug = 1
 split-debuginfo = "off"
