@@ -3551,13 +3551,15 @@ fn add_builtin_bedrock_models_with_store(
     resolved: &mut IndexMap<String, ModelEntry>,
     store: &crate::agent::credential_store::CredentialStore,
 ) {
-    // Bare ids, matching the `bedrock-mantle` endpoint's Anthropic-compatible
-    // Messages API -- not the `us.`-prefixed, date-suffixed cross-region
-    // inference-profile ids the native Converse/InvokeModel API expects.
+    // US cross-region inference-profile ids required for on-demand invocation
+    // through Bedrock Runtime from the default us-east-1 endpoint.
     const MODELS: &[(&str, &str)] = &[
-        ("anthropic.claude-sonnet-4-6", "Claude Sonnet 4.6"),
-        ("anthropic.claude-opus-4-6", "Claude Opus 4.6"),
-        ("anthropic.claude-haiku-4-5", "Claude Haiku 4.5"),
+        ("us.anthropic.claude-sonnet-4-6", "Claude Sonnet 4.6"),
+        ("us.anthropic.claude-opus-4-6-v1", "Claude Opus 4.6"),
+        (
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "Claude Haiku 4.5",
+        ),
     ];
 
     if has_explicit_models_for_connection(cfg, "bedrock") {

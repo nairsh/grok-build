@@ -97,26 +97,25 @@ adapters. Google Vertex, Azure OpenAI Responses, Cloudflare's account-scoped
 endpoints, and other native provider transports remain separate follow-up work
 rather than being advertised as compatible presets.
 
-Amazon Bedrock is included via its Anthropic-compatible `bedrock-mantle`
-endpoint (`/anthropic/v1/messages`), not the native Converse/InvokeModel API —
-that avoids needing SigV4 request signing. Auth is an [Amazon Bedrock API
+Amazon Bedrock is included via the Bedrock Runtime `InvokeModel` endpoint.
+Auth is an [Amazon Bedrock API
 key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) sent
-as a bearer token via `AWS_BEARER_TOKEN_BEDROCK`. **Use a long-term key**
-(generated in the Bedrock console) — short-term/session keys authenticate
-against `bedrock-runtime` but are rejected by `bedrock-mantle`. The preset
-defaults to `us-east-1`; for another region, add a `[connection.bedrock]`
-block in `~/.atlas/config.toml` with a `base_url` pointing at that region's
-`bedrock-mantle` endpoint (same id, so it overrides the built-in).
+as a bearer token via `AWS_BEARER_TOKEN_BEDROCK`; no SigV4 setup is required.
+The preset defaults to `us-east-1`. For another region, add a
+`[connection.bedrock]` block in `~/.atlas/config.toml` with a `base_url`
+pointing at that region's `bedrock-runtime` endpoint (same id, so it overrides
+the built-in), and configure inference-profile model ids valid in that region.
 
 Unlike every other built-in preset (which seeds a single default model),
 Bedrock auto-seeds three Claude models to `/model` as soon as
-`AWS_BEARER_TOKEN_BEDROCK` is set: `anthropic.claude-sonnet-4-6`,
-`anthropic.claude-opus-4-6`, and `anthropic.claude-haiku-4-5` (bare ids —
-`bedrock-mantle` doesn't use the `us.`-prefixed, date-suffixed inference-profile
-ids the native API needs). Each model also needs access granted for your
-account in the Bedrock console (Model access); a denied model returns a clean
-`permission_error`, not a retry loop. Add your own `[model.*]` blocks against
-the `bedrock` connection to reach other Bedrock model ids instead (see
+`AWS_BEARER_TOKEN_BEDROCK` is set:
+`us.anthropic.claude-sonnet-4-6`,
+`us.anthropic.claude-opus-4-6-v1`, and
+`us.anthropic.claude-haiku-4-5-20251001-v1:0`. These are US cross-region
+inference-profile ids; the corresponding bare foundation-model ids reject
+on-demand calls. Each model also needs access granted for your account in the
+Bedrock console. Add your own `[model.*]` blocks against the `bedrock`
+connection to reach other Bedrock model ids instead (see
 [Defining your own connection](#defining-your-own-connection)); any explicit
 model on the connection suppresses this curated seeding. `atlas login bedrock`
 also accepts a comma-separated list of model ids, same as OpenRouter below, if

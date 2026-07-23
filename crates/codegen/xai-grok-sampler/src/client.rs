@@ -14,7 +14,7 @@
 
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
-use futures_util::stream::BoxStream;
+use futures_util::stream::{self, BoxStream};
 use reqwest::header::{
     ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT,
 };
@@ -48,6 +48,17 @@ fn is_chatgpt_codex_endpoint(base_url: &str) -> bool {
     reqwest::Url::parse(base_url).is_ok_and(|url| {
         url.host_str() == Some(CHATGPT_CODEX_HOST)
             && url.path().trim_end_matches('/') == CHATGPT_CODEX_PATH
+    })
+}
+
+/// Bedrock Runtime supports Anthropic's request/response schema through
+/// `InvokeModel`, but not the `/messages` route used by the public Anthropic
+/// API. Bedrock API keys still use ordinary bearer authentication here.
+fn is_bedrock_runtime_endpoint(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url).is_ok_and(|url| {
+        url.host_str()
+            .is_some_and(|host| host.starts_with("bedrock-runtime."))
+            || url.path().contains("/bedrock-runtime")
     })
 }
 
@@ -1666,6 +1677,193 @@ impl SamplingClient {
         Ok(())
     }
 
+    fn bedrock_invoke_endpoint(&self, model: &str) -> Result<reqwest::Url> {
+        let mut url = reqwest::Url::parse(&self.base_url)
+            .map_err(|_| SamplingError::InvalidConfiguration("Invalid Bedrock Runtime base URL"))?;
+        let base_path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{base_path}/model/{model}/invoke"));
+        Ok(url)
+    }
+
+    /// Invoke an Anthropic model through Bedrock Runtime. The body is the
+    /// Messages request with Bedrock's version field added and transport-only
+    /// fields removed; the model is selected by the URL path.
+    async fn create_bedrock_runtime_message(
+        &self,
+        request: &MessagesRequestWrapper,
+    ) -> Result<(messages::MessagesResponse, Option<ResponseModelMetadata>)> {
+        let model_id = request.inner.model.as_str();
+        let endpoint = self.bedrock_invoke_endpoint(model_id)?;
+        let mut body = serde_json::to_value(&request.inner)?;
+        let object = body
+            .as_object_mut()
+            .ok_or(SamplingError::InvalidConfiguration(
+                "Invalid Bedrock Messages request",
+            ))?;
+        object.remove("model");
+        object.remove("stream");
+        object.insert(
+            "anthropic_version".to_owned(),
+            serde_json::Value::String("bedrock-2023-05-31".to_owned()),
+        );
+
+        let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
+        let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
+        let grok_headers = GrokRequestHeaders {
+            conv_id: x_grok_conv_id,
+            req_id: x_grok_req_id,
+            model_id,
+            session_id: request.x_grok_session_id.as_deref().unwrap_or_default(),
+            turn_idx: request.x_grok_turn_idx.as_deref(),
+            agent_id: request.x_grok_agent_id.as_deref().unwrap_or_default(),
+            deployment_id: request.x_grok_deployment_id.as_deref(),
+            user_id: request.x_grok_user_id.as_deref(),
+        };
+        let response = grok_headers
+            .apply(self.post(endpoint.clone()))
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let model_metadata = extract_model_metadata(response.headers());
+        let retry_after_secs = extract_retry_after(response.headers());
+        let should_retry = extract_should_retry(response.headers());
+        let bytes = response.bytes().await?;
+        if !status.is_success() {
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                self.record_401_attribution(crate::attribution::SamplingConsumer::Messages);
+                return Err(SamplingError::Auth(format!(
+                    "Unauthorized (401) from {endpoint}: {}",
+                    parse_error_bytes(bytes.as_ref())
+                )));
+            }
+            let req_headers =
+                self.format_request_headers(x_grok_conv_id, x_grok_req_id, model_id, false);
+            let message = self.build_api_error_message(
+                status,
+                &parse_error_bytes(bytes.as_ref()),
+                endpoint.as_str(),
+                &req_headers,
+                None,
+            );
+            return Err(SamplingError::Api {
+                status,
+                message,
+                model_metadata,
+                retry_after_secs,
+                should_retry,
+            });
+        }
+
+        let response = serde_json::from_slice::<messages::MessagesResponse>(&bytes)?;
+        Ok((response, model_metadata))
+    }
+
+    /// Convert Bedrock Runtime's completed Messages response into the same
+    /// event sequence consumed by the existing Messages stream transformer.
+    /// InvokeModel is non-streaming here, so each content block is emitted as
+    /// one delta after the HTTP response completes.
+    fn completed_message_events(
+        response: messages::MessagesResponse,
+    ) -> Vec<messages::MessageStreamEvent> {
+        use messages::{
+            ContentBlock, MessageDeltaBody, MessageDeltaUsage, MessageStreamEvent, StreamDelta,
+        };
+
+        let mut start = response.clone();
+        start.content.clear();
+        start.stop_reason = None;
+        start.usage.output_tokens = 0;
+
+        let mut events = vec![MessageStreamEvent::MessageStart { message: start }];
+        for (index, block) in response.content.into_iter().enumerate() {
+            let index = index as u32;
+            match block {
+                ContentBlock::Text {
+                    text,
+                    cache_control,
+                } => {
+                    events.push(MessageStreamEvent::ContentBlockStart {
+                        index,
+                        content_block: ContentBlock::Text {
+                            text: String::new(),
+                            cache_control,
+                        },
+                    });
+                    if !text.is_empty() {
+                        events.push(MessageStreamEvent::ContentBlockDelta {
+                            index,
+                            delta: StreamDelta::TextDelta { text },
+                        });
+                    }
+                }
+                ContentBlock::Thinking {
+                    thinking,
+                    signature,
+                } => {
+                    events.push(MessageStreamEvent::ContentBlockStart {
+                        index,
+                        content_block: ContentBlock::Thinking {
+                            thinking: String::new(),
+                            signature: String::new(),
+                        },
+                    });
+                    if !thinking.is_empty() {
+                        events.push(MessageStreamEvent::ContentBlockDelta {
+                            index,
+                            delta: StreamDelta::ThinkingDelta { thinking },
+                        });
+                    }
+                    if !signature.is_empty() {
+                        events.push(MessageStreamEvent::ContentBlockDelta {
+                            index,
+                            delta: StreamDelta::SignatureDelta { signature },
+                        });
+                    }
+                }
+                ContentBlock::ToolUse { id, name, input } => {
+                    events.push(MessageStreamEvent::ContentBlockStart {
+                        index,
+                        content_block: ContentBlock::ToolUse {
+                            id,
+                            name,
+                            input: serde_json::Value::Object(Default::default()),
+                        },
+                    });
+                    events.push(MessageStreamEvent::ContentBlockDelta {
+                        index,
+                        delta: StreamDelta::InputJsonDelta {
+                            partial_json: input.to_string(),
+                        },
+                    });
+                }
+                other => {
+                    events.push(MessageStreamEvent::ContentBlockStart {
+                        index,
+                        content_block: other,
+                    });
+                }
+            }
+            events.push(MessageStreamEvent::ContentBlockStop { index });
+        }
+        events.push(MessageStreamEvent::MessageDelta {
+            delta: MessageDeltaBody {
+                stop_reason: response.stop_reason,
+                stop_details: None,
+            },
+            usage: MessageDeltaUsage {
+                output_tokens: response.usage.output_tokens,
+                input_tokens: None,
+                cache_read_input_tokens: None,
+                cache_creation_input_tokens: None,
+            },
+        });
+        events.push(MessageStreamEvent::MessageStop);
+        events
+    }
+
     /// Create a message using the Anthropic Messages API (non-streaming).
     pub async fn create_message(
         &self,
@@ -1679,6 +1877,13 @@ impl SamplingClient {
 
         // Drop process-local trace data.
         request.trace.take();
+
+        if is_bedrock_runtime_endpoint(&self.base_url) {
+            return self
+                .create_bedrock_runtime_message(&request)
+                .await
+                .map(|(response, _)| response);
+        }
 
         tracing::debug!("create_message: {:?}", &request.inner);
         tracing::debug!("endpoint: {:?}", self.endpoint("messages"));
@@ -1792,6 +1997,12 @@ impl SamplingClient {
 
         // Drop process-local trace data.
         request.trace.take();
+
+        if is_bedrock_runtime_endpoint(&self.base_url) {
+            let (response, model_metadata) = self.create_bedrock_runtime_message(&request).await?;
+            let events = Self::completed_message_events(response).into_iter().map(Ok);
+            return Ok((stream::iter(events).boxed(), model_metadata));
+        }
 
         tracing::debug!(
             base_url = %self.base_url,
