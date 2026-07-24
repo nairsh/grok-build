@@ -88,7 +88,7 @@ dump_bash_state() {
     local content="$1"
     local var_name="$2"
     if [[ -n "$content" ]]; then
-      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'ATLAS_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
+      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'GROK_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
       command base64 <<<"$content" | command tr -d '\n'
       builtin printf '\nGROK_SNAP_EOF_%s\n' "$var_name"
       builtin printf ')\n'
@@ -142,7 +142,7 @@ function dump_zsh_state() {
     local content="$1"
     local var_name="$2"
     if [[ -n "$content" ]]; then
-      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'ATLAS_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
+      builtin printf 'grok_snap_%s=$(command base64 -d <<'"'"'GROK_SNAP_EOF_%s'"'"'\n' "$var_name" "$var_name"
       command base64 <<<"$content" | command tr -d '\n'
       builtin printf '\nGROK_SNAP_EOF_%s\n' "$var_name"
       builtin printf ')\n'
