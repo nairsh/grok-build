@@ -33,6 +33,7 @@
 pub mod login;
 pub mod protocol;
 pub mod session;
+pub mod tool_render;
 
 use serde_json::Value;
 
