@@ -5,11 +5,13 @@
 //! returning the same [`TurnOutcome`] so all surrounding turn bookkeeping is
 //! preserved. See `crate::agent::claude_agent`.
 //!
+//! Harness tool activity is projected onto **native ACP tool cards** by
+//! [`claude_agent::tool_render`], so a harness turn's Run / Read / Edit blocks
+//! are indistinguishable from a sampler turn's.
+//!
 //! ⚠️ **UNVERIFIED.** This projection has not been exercised against a live
-//! `claude` process or a real Pro/Max subscription (no login in CI), and the
-//! workspace was not compiled in the authoring environment — expect a
-//! compile-fix pass. Current fidelity gaps, tracked as follow-ups:
-//!   * tool activity is rendered as transcript text, not native ACP tool cards;
+//! `claude` process or a real Pro/Max subscription (no login in CI). Remaining
+//! fidelity gap, tracked as a follow-up:
 //!   * permissions are handled by running the harness in `bypassPermissions`
 //!     mode (its tools are sandboxed) rather than round-tripping through Atlas's
 //!     interactive permission modal.
@@ -19,6 +21,7 @@ use super::*;
 use crate::agent::claude_agent::{
     self, HarnessEvent, PermissionDecision,
     session::{ClaudeAgentSession, HarnessCommand},
+    tool_render::{self, ToolCard},
 };
 
 impl SessionActor {
@@ -80,6 +83,10 @@ impl SessionActor {
         }
 
         let mut tools_called: Vec<String> = Vec::new();
+        // Tool name + input, keyed by the harness's `tool_use_id`: the matching
+        // `tool_result` frame carries neither, but both are needed to shape the
+        // completion update the same way the start card was shaped.
+        let mut open_tools: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         while let Some(event) = session.next_event().await {
             match event {
                 HarnessEvent::SessionStarted { session_id, .. } => {
@@ -89,20 +96,35 @@ impl SessionActor {
                 }
                 HarnessEvent::AssistantText { text } => self.emit_harness_text(&text).await,
                 HarnessEvent::Thinking { text } => self.emit_harness_thought(&text).await,
-                HarnessEvent::ToolUse { name, input, .. } => {
+                HarnessEvent::ToolUse { id, name, input } => {
                     tools_called.push(name.clone());
-                    // TODO(parity): emit a native `acp::SessionUpdate::ToolCall`
-                    // card instead of transcript text.
-                    let rendered = serde_json::to_string(&input).unwrap_or_default();
-                    self.emit_harness_text(&format!("\n⚙ {name} {rendered}\n"))
-                        .await;
+                    self.emit_harness_tool_call(&id, &name, &input).await;
+                    open_tools.insert(id, (name, input));
                 }
                 HarnessEvent::ToolResult {
-                    content, is_error, ..
+                    tool_use_id,
+                    content,
+                    is_error,
                 } => {
-                    let prefix = if is_error { "✗" } else { "→" };
-                    self.emit_harness_text(&format!("{prefix} {content}\n"))
+                    // A result for a tool_use we never saw (a frame lost to a
+                    // reconnect) has no card to update; drop it rather than
+                    // opening a second, contentless one.
+                    if let Some((name, input)) = open_tools.remove(&tool_use_id) {
+                        self.send_update(
+                            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                                acp::ToolCallId::new(Arc::from(tool_use_id)),
+                                tool_render::result_fields(
+                                    &name,
+                                    &input,
+                                    &content,
+                                    is_error,
+                                    self.tool_context.cwd.as_path(),
+                                ),
+                            )),
+                            None,
+                        )
                         .await;
+                    }
                 }
                 HarnessEvent::PermissionRequest(req) => {
                     // Only reached if a future change drops `bypassPermissions`.
@@ -132,6 +154,13 @@ impl SessionActor {
             }
         }
 
+        // The turn ended (result frame, cancellation, or the harness exiting)
+        // with tool cards still open. Close them: a card left `InProgress`
+        // spins in the TUI for the rest of the session.
+        for (tool_use_id, (name, _)) in open_tools {
+            self.close_orphaned_tool_call(&tool_use_id, &name).await;
+        }
+
         session.shutdown().await;
         Ok(harness_completed(tools_called))
     }
@@ -145,6 +174,75 @@ impl SessionActor {
             acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
                 acp::TextContent::new(text.to_owned()),
             ))),
+            None,
+        )
+        .await;
+    }
+
+    /// Open a native tool card for a harness tool invocation.
+    ///
+    /// `InProgress` rather than `Pending`: the harness only reports a tool once
+    /// it has already decided to run it, so there is no approval gap to show.
+    /// A `TodoWrite` additionally drives the plan pane, which is where the TUI
+    /// renders todos (its card is suppressed, exactly as on the sampler path).
+    async fn emit_harness_tool_call(&self, id: &str, name: &str, input: &serde_json::Value) {
+        let cwd = self.tool_context.cwd.as_path();
+        let ToolCard {
+            title,
+            kind,
+            raw_input,
+            locations,
+            mut content,
+            diff_anchor,
+        } = tool_render::tool_card(name, input, cwd);
+        // Diffs are posted before the edit lands, so the file still holds the
+        // pre-edit text the hunks are numbered against.
+        if let Some(path) = diff_anchor
+            && let Ok(text) = tokio::fs::read_to_string(&path).await
+        {
+            tool_render::anchor_diff_lines(&mut content, &text);
+        }
+        self.send_update(
+            acp::SessionUpdate::ToolCall(
+                acp::ToolCall::new(acp::ToolCallId::new(Arc::from(id)), title)
+                    .kind(kind)
+                    .status(acp::ToolCallStatus::InProgress)
+                    .raw_input(Some(raw_input))
+                    .locations(locations)
+                    .content(content),
+            ),
+            None,
+        )
+        .await;
+        if name == "TodoWrite"
+            && let Some(plan) = tool_render::plan_update(input)
+        {
+            self.send_update(acp::SessionUpdate::Plan(plan), None).await;
+        }
+    }
+
+    /// Fail a tool card whose result never arrived, so it stops rendering as
+    /// running. The harness owns the tool, so whether it actually completed is
+    /// unknowable here — the card says only that the outcome was not reported.
+    async fn close_orphaned_tool_call(&self, tool_use_id: &str, name: &str) {
+        tracing::debug!(
+            target: "claude_agent",
+            tool_use_id,
+            tool_name = name,
+            "harness turn ended before the tool reported a result"
+        );
+        self.send_update(
+            acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                acp::ToolCallId::new(Arc::from(tool_use_id)),
+                acp::ToolCallUpdateFields::new()
+                    .status(Some(acp::ToolCallStatus::Failed))
+                    .content(Some(vec![acp::ToolCallContent::from(
+                        acp::ContentBlock::Text(acp::TextContent::new(
+                            "The turn ended before the harness reported this tool's result."
+                                .to_owned(),
+                        )),
+                    )])),
+            )),
             None,
         )
         .await;
