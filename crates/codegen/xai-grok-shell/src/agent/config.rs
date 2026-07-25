@@ -3307,6 +3307,7 @@ fn vendor_reasoning_efforts() -> Vec<ReasoningEffortOption> {
         (ReasoningEffort::Low, "low", "Low", false),
         (ReasoningEffort::Medium, "medium", "Medium", true),
         (ReasoningEffort::High, "high", "High", false),
+        (ReasoningEffort::Xhigh, "xhigh", "Xhigh", false),
     ]
     .into_iter()
     .map(|(value, id, label, default)| ReasoningEffortOption {
@@ -3434,7 +3435,7 @@ fn add_builtin_claude_agent_model(
     const MODELS: &[(&str, &str)] = &[
         ("", "Default"),
         ("sonnet", "Sonnet 5"),
-        ("opus", "Opus 4.8"),
+        ("opus", "Opus 5"),
         ("haiku", "Haiku 4.5"),
         ("fable", "Fable 5"),
     ];
