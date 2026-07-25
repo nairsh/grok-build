@@ -3299,7 +3299,11 @@ fn apply_vendor_reasoning_efforts(info: &mut ModelInfo, explicitly_disabled: boo
     if !is_vendor_reasoning_model {
         return;
     }
-    info.reasoning_efforts = [
+    info.reasoning_efforts = vendor_reasoning_efforts();
+}
+
+fn vendor_reasoning_efforts() -> Vec<ReasoningEffortOption> {
+    [
         (ReasoningEffort::Low, "low", "Low", false),
         (ReasoningEffort::Medium, "medium", "Medium", true),
         (ReasoningEffort::High, "high", "High", false),
@@ -3312,7 +3316,13 @@ fn apply_vendor_reasoning_efforts(info: &mut ModelInfo, explicitly_disabled: boo
         description: None,
         default,
     })
-    .collect();
+    .collect()
+}
+
+fn apply_claude_agent_reasoning(info: &mut ModelInfo) {
+    info.reasoning_efforts = vendor_reasoning_efforts();
+    info.supports_reasoning_effort = true;
+    info.reasoning_effort = Some(ReasoningEffort::Medium);
 }
 
 fn add_builtin_connection_models(cfg: &Config, resolved: &mut IndexMap<String, ModelEntry>) {
@@ -3470,6 +3480,12 @@ fn add_builtin_claude_agent_model(
             )
         });
         entry.info.context_window = NonZeroU64::new(200_000).expect("200000 is non-zero");
+        // The harness models use short aliases (and the default uses an empty
+        // model id), so the vendor-name inference in
+        // `apply_vendor_reasoning_efforts` cannot recognize them as Claude
+        // models. Advertise the capability explicitly so ACP clients render
+        // both `/model`'s effort step and the `/effort` choices.
+        apply_claude_agent_reasoning(&mut entry.info);
         resolved.insert(catalog_id, entry);
     }
 }
@@ -5349,6 +5365,34 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use xai_grok_test_support::EnvGuard;
+
+    #[test]
+    fn claude_agent_aliases_advertise_reasoning_efforts_to_acp() {
+        let cfg = Config::new_from_toml_cfg(&toml::from_str("").unwrap()).unwrap();
+
+        for alias in ["", "sonnet", "opus", "haiku", "fable"] {
+            let mut entry = ModelEntry::fallback(alias, &cfg.endpoints);
+            apply_claude_agent_reasoning(&mut entry.info);
+            let models = IndexMap::from([("claude-agent/test".to_owned(), entry)]);
+            let acp_models = to_acp_model_info(&models);
+            let meta = acp_models
+                .values()
+                .next()
+                .and_then(|info| info.meta.as_ref())
+                .expect("Claude Agent model metadata");
+
+            assert_eq!(meta["supportsReasoningEffort"], true, "alias {alias:?}");
+            assert_eq!(meta["reasoningEffort"], "medium", "alias {alias:?}");
+            assert_eq!(
+                meta["reasoningEfforts"]
+                    .as_array()
+                    .expect("reasoning effort menu")
+                    .len(),
+                3,
+                "alias {alias:?}",
+            );
+        }
+    }
 
     #[test]
     fn saved_openai_oauth_adds_a_usable_chatgpt_model() {
