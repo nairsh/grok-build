@@ -806,6 +806,15 @@ pub(super) fn action_for_string(
                     .map(Action::SetTaskModel)
             }
         }
+        "explore_model" => {
+            if value.is_empty() {
+                Some(Action::ClearExploreModel)
+            } else {
+                snapshot
+                    .resolve_model_name(&value)
+                    .map(Action::SetExploreModel)
+            }
+        }
 
         _ => {
             let _ = value;

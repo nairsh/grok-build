@@ -488,6 +488,10 @@ impl MvpAgent {
             parent_max_turns,
             available_models,
             subagent_model_overrides: self.subagent_model_overrides.clone(),
+            // Read live from `cfg` (not a startup snapshot) so a Settings-modal
+            // change applies to the next spawn without a restart — the
+            // config-reloader refreshes `cfg.ui.explore_model` on write.
+            explore_model_default: self.cfg.borrow().ui.explore_model.clone(),
             subagent_toggle: self.subagent_toggle.clone(),
             subagent_roles: self.subagent_roles.clone(),
             subagent_personas: self.subagent_personas.clone(),

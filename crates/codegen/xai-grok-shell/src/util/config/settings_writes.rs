@@ -137,6 +137,21 @@ pub async fn set_task_model(value: String) -> Result<()> {
     update_config(|cfg| cfg.ui.task_model = (!value.is_empty()).then_some(value)).await
 }
 
+/// Persist the optional model used for `explore` subagents.
+///
+/// Empty string clears the override (explore inherits the parent model
+/// again, subject to `[subagents.models]`).
+pub async fn set_explore_model(value: String) -> Result<()> {
+    if value.len() > MAX_DEFAULT_MODEL_LEN {
+        anyhow::bail!(
+            "explore_model name too long ({} > {} bytes)",
+            value.len(),
+            MAX_DEFAULT_MODEL_LEN
+        );
+    }
+    update_config(|cfg| cfg.ui.explore_model = (!value.is_empty()).then_some(value)).await
+}
+
 /// Bounds for [`set_max_thoughts_width`]. Mirrored from the pager's
 /// registry consts; a CI test pins the agreement.
 const MAX_THOUGHTS_WIDTH_SHELL_MIN: i64 = 40;

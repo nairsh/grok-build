@@ -1866,6 +1866,51 @@ pub(in crate::app::dispatch) fn clear_task_model(app: &mut AppView) -> Vec<Effec
     }]
 }
 
+/// Persist the model used for `explore` subagents. Mirrors
+/// [`set_task_model`]: mirror + persist + toast, no live runtime mutation —
+/// the shell reads `[ui].explore_model` when it spawns the next explore.
+pub(in crate::app::dispatch) fn set_explore_model(
+    app: &mut AppView,
+    id: acp::ModelId,
+) -> Vec<Effect> {
+    let ActiveView::Agent(aid) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get(&aid) else {
+        return vec![];
+    };
+    if !agent.session.models.available.contains_key(&id) {
+        return vec![];
+    }
+    let value = id.0.to_string();
+    if app.current_ui.explore_model.as_deref() == Some(value.as_str()) {
+        return vec![];
+    }
+    let previous = app.current_ui.explore_model.clone().unwrap_or_default();
+    let display = agent.session.models.display_name_for(&id);
+    app.current_ui.explore_model = Some(value.clone());
+    refresh_open_settings_modals(app);
+    app.show_toast(&format!("✓ Explore model: {display}"));
+    vec![Effect::PersistSetting {
+        key: "explore_model",
+        value: crate::settings::SettingValue::String(value),
+        rollback_value: crate::settings::SettingValue::String(previous),
+    }]
+}
+
+pub(in crate::app::dispatch) fn clear_explore_model(app: &mut AppView) -> Vec<Effect> {
+    let Some(previous) = app.current_ui.explore_model.take() else {
+        return vec![];
+    };
+    refresh_open_settings_modals(app);
+    app.show_toast("✓ Explore model: cleared");
+    vec![Effect::PersistSetting {
+        key: "explore_model",
+        value: crate::settings::SettingValue::String(String::new()),
+        rollback_value: crate::settings::SettingValue::String(previous),
+    }]
+}
+
 // `web_search_model`, `session_summary_model`, and
 // `default_reasoning_effort` setters were removed alongside their
 // registry entries. Mirror fields and TOML schema stay for compat.

@@ -554,6 +554,9 @@ pub enum Action {
     /// Commit or clear the task model used for session names and recaps.
     SetTaskModel(acp::ModelId),
     ClearTaskModel,
+    /// Commit or clear the model used for `explore` subagents.
+    SetExploreModel(acp::ModelId),
+    ClearExploreModel,
     /// Commit the `show_tips` preference. Persisted to `[cli].show_tips`.
     /// Restart-required — tips are resolved once at startup.
     SetShowTips(bool),

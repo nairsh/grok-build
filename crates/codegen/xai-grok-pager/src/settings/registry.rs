@@ -665,6 +665,9 @@ pub fn current_value_for(
         "task_model" => Some(SettingValue::String(
             ui.task_model.clone().unwrap_or_default(),
         )),
+        "explore_model" => Some(SettingValue::String(
+            ui.explore_model.clone().unwrap_or_default(),
+        )),
 
         _ => None,
     }
@@ -1101,6 +1104,16 @@ mod tests {
                     assert_eq!(
                         ui.task_model, None,
                         "UiConfig::default().task_model must be unset",
+                    );
+                }
+                ("explore_model", SettingKind::DynamicEnum { default, .. }) => {
+                    assert_eq!(
+                        *default, "",
+                        "explore_model registry default must be empty string — an absent UI override lets explore inherit the parent model",
+                    );
+                    assert_eq!(
+                        ui.explore_model, None,
+                        "UiConfig::default().explore_model must be unset",
                     );
                 }
 

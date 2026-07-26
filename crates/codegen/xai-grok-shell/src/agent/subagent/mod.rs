@@ -38,6 +38,10 @@ use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use xai_grok_tools::implementations::grok_build::task::types::*;
 use xai_grok_workspace::file_system::AsyncFileSystem;
 use xai_hunk_tracker::HunkTrackerHandle;
+
+/// Subagent type name for the built-in read-only search agent. Also the type
+/// strict read-only / strict workflow workers are rewritten to.
+pub(crate) const EXPLORE_SUBAGENT_TYPE: &str = "explore";
 mod coordinator_lifecycle;
 mod coordinator_query;
 mod handle_request;
@@ -256,6 +260,11 @@ pub(crate) struct SubagentSpawnContext {
     pub available_models: indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
     /// Per-subagent model ID overrides from config.toml `[subagents.models]`.
     pub subagent_model_overrides: std::collections::HashMap<String, String>,
+    /// Default model for `explore` subagents, from `[ui].explore_model`
+    /// (the Settings-modal surface). Ranks below an explicit
+    /// `[subagents.models].explore` pin and the agent definition's own
+    /// `model:`, above inheriting the parent model. `None` = no opinion.
+    pub explore_model_default: Option<String>,
     /// Per-subagent enable/disable toggles from config.toml `[subagents.toggle]`.
     /// Omitted agents default to enabled (`true`).
     pub subagent_toggle: std::collections::HashMap<String, bool>,
@@ -811,6 +820,19 @@ async fn resolve_subagent_sampling_config(
             model_id,
             "agent_definition",
             "Agent definition model references unknown model, falling through to inherit",
+        )
+    {
+        return resolved;
+    }
+    // `[ui].explore_model` — the Settings-modal default for read-only
+    // exploration. Exploration is high-volume, low-stakes work, so it should
+    // not silently ride along on an expensive session model.
+    if agent_name == EXPLORE_SUBAGENT_TYPE
+        && let Some(model_id) = ctx.explore_model_default.as_deref()
+        && let Some(resolved) = try_pin(
+            model_id,
+            "ui_explore_model",
+            "ui.explore_model references unknown model, falling through to inherit",
         )
     {
         return resolved;

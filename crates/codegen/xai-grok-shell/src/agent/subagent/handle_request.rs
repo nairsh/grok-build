@@ -88,7 +88,7 @@ pub(crate) async fn handle_subagent_request(
         return;
     }
     let mut definition = if strict_read_only || strict_workflow_write {
-        request.subagent_type = "explore".to_string();
+        request.subagent_type = EXPLORE_SUBAGENT_TYPE.to_string();
         request.resume_from = None;
         request.fork_context = false;
         request.runtime_overrides.persona = None;

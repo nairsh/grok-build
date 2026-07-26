@@ -14,6 +14,12 @@ pub struct UiConfig {
     /// and `/recap`. `None` keeps the normal task-model resolution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_model: Option<String>,
+    /// Optional model for `explore` subagents (read-only search fan-out).
+    /// Exploration is cheap, high-volume work, so a highly capable session
+    /// model is usually wasteful here. `None` keeps the normal subagent
+    /// model resolution (inherit the parent's model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explore_model: Option<String>,
     /// YOLO mode. Read by `util::config`, declared here for `serde_ignored`.
     #[serde(default)]
     pub yolo: bool,
@@ -235,6 +241,7 @@ impl Default for UiConfig {
             theme: None,
             fork_secondary_model: xai_grok_models::default_model().to_string(),
             task_model: None,
+            explore_model: None,
             yolo: false,
             ui_theme: None,
             compact_mode: false,
