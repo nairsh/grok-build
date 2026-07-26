@@ -1518,5 +1518,24 @@ pub fn default_settings() -> Vec<SettingMeta> {
             restart_required: false,
             hidden_in_minimal: false,
         },
+        SettingMeta {
+            key: "explore_model",
+            category: SettingCategory::Models,
+            owner: SettingOwner::Shell,
+            label: "Explore model",
+            description: "Model used for `explore` subagents (read-only search fan-out). \
+                          Point it at a cheaper model so exploration does not ride along on \
+                          an expensive session model. Pick `(no override)` to inherit.",
+            keywords: &[
+                "explore", "search", "subagent", "agent", "cheap", "cost", "model", "models",
+            ],
+            kind: SettingKind::DynamicEnum {
+                default: "",
+                source: DynamicEnumSource::ActiveModelCatalog,
+                supports_preview: false,
+            },
+            restart_required: false,
+            hidden_in_minimal: false,
+        },
     ]
 }

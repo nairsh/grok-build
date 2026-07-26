@@ -214,6 +214,16 @@ explore = "grok-build"               # route explore to a specific model
 
 Per-type model overrides apply for any parent. Without an override, a subagent inherits the parent's model.
 
+The `explore` subagent has a second, UI-driven default: **Settings → Models → Explore model** (`/settings`), persisted as `[ui].explore_model`. Exploration is cheap, high-volume search work, so pointing it at a smaller model avoids paying session-model rates for every fan-out. Resolution order for `explore`, highest first:
+
+1. a per-call model override (task tool, role, or persona),
+2. `[subagents.models].explore`,
+3. the agent definition's own `model:` frontmatter,
+4. `[ui].explore_model` (the Settings entry),
+5. inherit the parent's model.
+
+Changing the setting applies to the next explore spawn — no restart needed.
+
 ### Custom Roles and Personas
 
 Define custom roles with their own capability and model defaults:

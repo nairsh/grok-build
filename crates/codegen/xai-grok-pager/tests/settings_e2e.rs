@@ -57,6 +57,7 @@ const ALL_SETTINGS_EXERCISED: &[&str] = &[
     "auto_update",
     "fork_secondary_model",
     "task_model",
+    "explore_model",
     "show_thinking_blocks",
     "prompt_suggestions",
     "group_tool_verbs",
@@ -1643,7 +1644,12 @@ fn registry_kind_membership_through_pr_14() {
     let dynamic_enum_keys = by_kind.remove("DynamicEnum").unwrap_or_default();
     assert_eq!(
         dynamic_enum_keys,
-        vec!["default_model", "fork_secondary_model", "task_model",],
+        vec![
+            "default_model",
+            "explore_model",
+            "fork_secondary_model",
+            "task_model",
+        ],
         "DynamicEnum kind membership drift",
     );
 
@@ -1760,6 +1766,9 @@ fn defaults_round_trip_through_registry() {
             "show_tips" => SettingValue::Bool(true),
             "auto_update" => SettingValue::Bool(true),
             "fork_secondary_model" => SettingValue::String(String::new()),
+            // Auxiliary model overrides: unset by default (empty sentinel).
+            "task_model" => SettingValue::String(String::new()),
+            "explore_model" => SettingValue::String(String::new()),
             "show_thinking_blocks" => SettingValue::Bool(true),
             "prompt_suggestions" => SettingValue::Bool(true),
             "group_tool_verbs" => SettingValue::Bool(true),
@@ -6243,7 +6252,12 @@ fn pr14_restart_required_split() {
 fn pr14_string_settings_use_known_model_validator() {
     use xai_grok_pager::settings::DynamicEnumSource;
     let reg = SettingsRegistry::defaults();
-    for key in ["default_model", "fork_secondary_model", "task_model"] {
+    for key in [
+        "default_model",
+        "fork_secondary_model",
+        "task_model",
+        "explore_model",
+    ] {
         let meta = reg
             .find(key)
             .unwrap_or_else(|| panic!("`{key}` must be registered"));

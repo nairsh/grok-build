@@ -352,6 +352,13 @@ explore = "grok-build"               # route to different models
 
 To pin the model a subagent uses, set its entry under `[subagents.models]`.
 
+The `explore` subagent also reads `[ui].explore_model`, which **Settings → Models → Explore model** writes. It applies when neither `[subagents.models].explore` nor the agent definition pins a model, so exploration can run on a cheaper model than the session's:
+
+```toml
+[ui]
+explore_model = "grok-build"          # cheaper model for read-only exploration
+```
+
 ### Skills
 
 ```toml

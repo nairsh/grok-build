@@ -2812,6 +2812,124 @@ async fn resolve_subagent_config_override_wins_over_agent_definition() {
     assert_eq!(config.model, "config-pin");
     assert_eq!(model_id.0.as_ref(), "config-pin");
 }
+/// `[ui].explore_model` (the Settings-modal entry) routes `explore`
+/// subagents to a cheaper model instead of inheriting an expensive parent.
+#[tokio::test]
+async fn ui_explore_model_applies_to_explore_instead_of_inheriting_parent() {
+    use xai_grok_agent::config::ModelOverride;
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.sampling_config.model = "expensive-parent".to_string();
+    ctx.model_id = acp::ModelId::new("expensive-parent");
+    ctx.available_models
+        .insert("cheap-explore".to_string(), test_model_entry("cheap-explore"));
+    ctx.explore_model_default = Some("cheap-explore".to_string());
+    let (config, model_id) = resolve_subagent_sampling_config(
+            "explore",
+            &ModelOverride::Inherit,
+            &ctx,
+        )
+        .await;
+    assert_eq!(config.model, "cheap-explore");
+    assert_eq!(model_id.0.as_ref(), "cheap-explore");
+}
+/// `[ui].explore_model` is scoped to the `explore` type — other subagent
+/// types keep inheriting the parent model.
+#[tokio::test]
+async fn ui_explore_model_does_not_affect_other_subagent_types() {
+    use xai_grok_agent::config::ModelOverride;
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.sampling_config.model = "expensive-parent".to_string();
+    ctx.model_id = acp::ModelId::new("expensive-parent");
+    ctx.available_models
+        .insert("cheap-explore".to_string(), test_model_entry("cheap-explore"));
+    ctx.explore_model_default = Some("cheap-explore".to_string());
+    let (config, model_id) = resolve_subagent_sampling_config(
+            "general-purpose",
+            &ModelOverride::Inherit,
+            &ctx,
+        )
+        .await;
+    assert_eq!(config.model, "expensive-parent");
+    assert_eq!(model_id.0.as_ref(), "expensive-parent");
+}
+/// The explicit `[subagents.models].explore` pin and the agent definition's
+/// own `model:` both outrank the generic `[ui].explore_model` default; an
+/// unresolvable `[ui].explore_model` falls through to inheriting the parent.
+#[tokio::test]
+async fn ui_explore_model_ranks_below_explicit_pins() {
+    use xai_grok_agent::config::ModelOverride;
+    let build_ctx = || {
+        let mut ctx = ctx_with_toggle(HashMap::new());
+        ctx.sampling_config.model = "expensive-parent".to_string();
+        ctx.model_id = acp::ModelId::new("expensive-parent");
+        ctx.available_models
+            .insert("cheap-explore".to_string(), test_model_entry("cheap-explore"));
+        ctx.available_models
+            .insert("config-pin".to_string(), test_model_entry("config-pin"));
+        ctx.available_models
+            .insert("agentdef-pin".to_string(), test_model_entry("agentdef-pin"));
+        ctx.explore_model_default = Some("cheap-explore".to_string());
+        ctx
+    };
+    let mut ctx = build_ctx();
+    ctx.subagent_model_overrides.insert("explore".to_string(), "config-pin".to_string());
+    let (config, _) = resolve_subagent_sampling_config(
+            "explore",
+            &ModelOverride::Inherit,
+            &ctx,
+        )
+        .await;
+    assert_eq!(
+        config.model, "config-pin",
+        "[subagents.models].explore must win over [ui].explore_model",
+    );
+    let ctx = build_ctx();
+    let (config, _) = resolve_subagent_sampling_config(
+            "explore",
+            &ModelOverride::Override("agentdef-pin".to_string()),
+            &ctx,
+        )
+        .await;
+    assert_eq!(
+        config.model, "agentdef-pin",
+        "an agent definition `model:` must win over [ui].explore_model",
+    );
+    let mut ctx = build_ctx();
+    ctx.explore_model_default = Some("does-not-exist".to_string());
+    let (config, _) = resolve_subagent_sampling_config(
+            "explore",
+            &ModelOverride::Inherit,
+            &ctx,
+        )
+        .await;
+    assert_eq!(
+        config.model, "expensive-parent",
+        "an unknown [ui].explore_model falls through to inheriting the parent",
+    );
+}
+/// A per-call model override (task tool / role / persona) still outranks
+/// `[ui].explore_model` on the real precedence path.
+#[tokio::test]
+async fn runtime_override_wins_over_ui_explore_model() {
+    use xai_grok_agent::config::ModelOverride;
+    let mut ctx = ctx_with_toggle(HashMap::new());
+    ctx.sampling_config.model = "expensive-parent".to_string();
+    ctx.model_id = acp::ModelId::new("expensive-parent");
+    ctx.available_models
+        .insert("cheap-explore".to_string(), test_model_entry("cheap-explore"));
+    ctx.available_models
+        .insert("caller-model".to_string(), test_model_entry("caller-model"));
+    ctx.explore_model_default = Some("cheap-explore".to_string());
+    let (config, model_id) = resolve_effective_model_config(
+            Some("caller-model"),
+            "explore",
+            &ModelOverride::Inherit,
+            &ctx,
+        )
+        .await;
+    assert_eq!(config.model, "caller-model");
+    assert_eq!(model_id.0.as_ref(), "caller-model");
+}
 /// An unresolvable `[subagents.models]` pin (model absent from
 /// `available_models`) falls through to inherit the parent model.
 #[tokio::test]

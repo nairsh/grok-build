@@ -576,6 +576,10 @@ fn handle_reload_models(agent: &MvpAgent) -> ExtResult {
         agent_config.session_summary_model = overrides.session_summary;
         agent_config.image_description_model = overrides.image_description;
         agent_config.prompt_suggest_model_pin = overrides.prompt_suggestion;
+        // `[ui].explore_model` is a model-family field too: the subagent spawn
+        // context reads it live, so refreshing it here makes a Settings-modal
+        // change take effect on the next explore spawn without a restart.
+        agent_config.ui.explore_model = toml_config.ui.explore_model.clone();
     }
     // Recompute the campaign overlay + `pre_campaign_default` (the catalog-miss
     // fallback) so reload matches spawn; `new_from_toml_cfg` reset it to None.
